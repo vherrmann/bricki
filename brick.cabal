@@ -60,6 +60,8 @@ library
     Brick.AttrMap
     Brick.Focus
     Brick.Main
+    Brick.MainBanana
+    Brick.MainReflex
     Brick.Markup
     Brick.Types
     Brick.Util
@@ -90,7 +92,12 @@ library
                        text,
                        text-zipper >= 0.7.1,
                        template-haskell,
-                       deepseq >= 1.3 && < 1.5
+                       deepseq >= 1.3 && < 1.5,
+                       reactive-banana,
+                       stm,
+                       reflex,
+                       reflex-host,
+                       these
 
 executable brick-cache-demo
   if !flag(demos)
@@ -297,3 +304,110 @@ executable brick-border-demo
                        data-default,
                        text,
                        microlens
+
+executable brick-banana-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs/reactive-banana
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-extensions:  CPP
+  default-language:    Haskell2010
+  main-is:             BananaDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.5.0,
+                       data-default,
+                       text,
+                       microlens,
+                       reactive-banana,
+                       containers
+
+executable brick-custom-event-demo-banana
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs/reactive-banana
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-extensions:  CPP
+  default-language:    Haskell2010
+  main-is:             CustomEventDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.5.0,
+                       data-default,
+                       text,
+                       microlens >= 0.3.0.0,
+                       microlens-th,
+                       reactive-banana,
+                       containers
+
+executable brick-suspend-resume-demo-banana
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs/reactive-banana
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-extensions:  CPP
+  default-language:    Haskell2010
+  main-is:             SuspendAndResumeDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.5.0,
+                       data-default,
+                       text,
+                       microlens >= 0.3.0.0,
+                       microlens-th,
+                       reactive-banana,
+                       containers
+
+executable brick-reflex-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs/reflex
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-extensions:  CPP
+  default-language:    Haskell2010
+  main-is:             ReflexDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.5.0,
+                       data-default,
+                       text,
+                       microlens,
+                       reflex,
+                       reflex-host,
+                       containers
+
+executable brick-custom-event-demo-reflex
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs/reflex
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  main-is:             CustomEventDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.5.0,
+                       data-default,
+                       text,
+                       microlens >= 0.3.0.0,
+                       microlens-th,
+                       reflex,
+                       reflex-host,
+                       transformers
+
+executable brick-suspend-resume-demo-reflex
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs/reflex
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  main-is:             SuspendAndResumeDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.5.0,
+                       data-default,
+                       text,
+                       microlens >= 0.3.0.0,
+                       microlens-th,
+                       reflex,
+                       reflex-host,
+                       transformers

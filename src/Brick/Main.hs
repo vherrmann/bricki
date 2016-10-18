@@ -203,7 +203,7 @@ customMain buildVty userChan app initialAppState = do
     (st, eState) <- runStateT (runReaderT (runEventM (appStartEvent app initialAppState)) eventRO) emptyES
     let initialRS = RS M.empty (esScrollRequests eState) S.empty mempty
     chan <- newChan
-    forkIO $ forever $ readChan userChan >>= (\userEvent -> writeChan chan (Right userEvent))
+    _ <- forkIO $ forever $ readChan userChan >>= (\userEvent -> writeChan chan (Right userEvent))
     run initialRS st chan
 
 supplyVtyEvents :: Vty -> Chan (Either Event e) -> IO ()
