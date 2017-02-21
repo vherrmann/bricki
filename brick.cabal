@@ -80,7 +80,7 @@ library
     Brick.Widgets.Internal
 
   build-depends:       base <= 5,
-                       vty >= 5.5.0,
+                       vty >= 5.5.0 && <5.15,
                        transformers,
                        data-default,
                        containers,
