@@ -1,12 +1,14 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 -- | This module provides the core widget combinators and rendering
 -- routines. Everything this library does is in terms of these basic
 -- primitives.
 module Brick.Widgets.Core
   ( -- * Basic rendering primitives
-    emptyWidget
+    TextWidth(..)
+  , emptyWidget
   , raw
   , txt
   , str
@@ -35,6 +37,7 @@ module Brick.Widgets.Core
   , withDefAttr
   , withAttr
   , forceAttr
+  , overrideAttr
   , updateAttrMap
 
   -- * Border style management
@@ -54,6 +57,10 @@ module Brick.Widgets.Core
   , cropRightBy
   , cropTopBy
   , cropBottomBy
+
+  -- * Extent reporting
+  , reportExtent
+  , clickable
 
   -- * Scrollable viewports
   , viewport
@@ -83,8 +90,9 @@ import Control.Monad ((>=>),when)
 import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class (lift)
+import qualified Data.Foldable as F
 import qualified Data.Text as T
-import Data.Default
+import qualified Data.DList as DL
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Function as DF
@@ -98,6 +106,19 @@ import Brick.Widgets.Border.Style
 import Brick.Util (clOffset, clamp)
 import Brick.AttrMap
 import Brick.Widgets.Internal
+
+-- | The class of text types that have widths measured in terminal
+-- columns. NEVER use 'length' etc. to measure the length of a string if
+-- you need to compute how much screen space it will occupy; always use
+-- 'textWidth'.
+class TextWidth a where
+    textWidth :: a -> Int
+
+instance TextWidth T.Text where
+    textWidth = V.wcswidth . T.unpack
+
+instance (F.Foldable f) => TextWidth (f Char) where
+    textWidth = V.wcswidth . F.toList
 
 -- | The class of types that store interface element names.
 class Named a n where
@@ -113,29 +134,66 @@ withBorderStyle bs p = Widget (hSize p) (vSize p) $ withReaderT (& ctxBorderStyl
 emptyWidget :: Widget n
 emptyWidget = raw V.emptyImage
 
--- | Add an offset to all cursor locations and visbility requests
--- in the specified rendering result. This function is critical for
--- maintaining correctness in the rendering results as they are
+-- | Add an offset to all cursor locations, visbility requests, and
+-- extents in the specified rendering result. This function is critical
+-- for maintaining correctness in the rendering results as they are
 -- processed successively by box layouts and other wrapping combinators,
 -- since calls to this function result in converting from widget-local
--- coordinates to (ultimately) terminal-global ones so they can be used
--- by other combinators. You should call this any time you render
+-- coordinates to (ultimately) terminal-global ones so they can be
+-- used by other combinators. You should call this any time you render
 -- something and then translate it or otherwise offset it from its
 -- original origin.
 addResultOffset :: Location -> Result n -> Result n
-addResultOffset off = addCursorOffset off . addVisibilityOffset off
+addResultOffset off = addCursorOffset off .
+                      addVisibilityOffset off .
+                      addExtentOffset off
 
 addVisibilityOffset :: Location -> Result n -> Result n
 addVisibilityOffset off r = r & visibilityRequestsL.each.vrPositionL %~ (off <>)
 
+addExtentOffset :: Location -> Result n -> Result n
+addExtentOffset off r = r & extentsL.each %~ (\(Extent n l sz o) -> Extent n (off <> l) sz o)
+
+-- | Render the specified widget and record its rendering extent using
+-- the specified name (see also 'lookupExtent').
+reportExtent :: n -> Widget n -> Widget n
+reportExtent n p =
+    Widget (hSize p) (vSize p) $ do
+        result <- render p
+        let ext = Extent n (Location (0, 0)) sz (Location (0, 0))
+            sz = ( result^.imageL.to V.imageWidth
+                 , result^.imageL.to V.imageHeight
+                 )
+        return $ result & extentsL %~ (ext:)
+
+-- | Request mouse click events on the specified widget.
+clickable :: n -> Widget n -> Widget n
+clickable n p =
+    Widget (hSize p) (vSize p) $ do
+        clickableNamesL %= (n:)
+        render $ reportExtent n p
+
 addCursorOffset :: Location -> Result n -> Result n
 addCursorOffset off r =
     let onlyVisible = filter isVisible
-        isVisible l = l^.columnL >= 0 && l^.rowL >= 0
+        isVisible l = l^.locationColumnL >= 0 && l^.locationRowL >= 0
     in r & cursorsL %~ (\cs -> onlyVisible $ (`clOffset` off) <$> cs)
 
 unrestricted :: Int
 unrestricted = 100000
+
+-- | Take a substring capable of fitting into the number of specified
+-- columns. This function takes character column widths into
+-- consideration.
+takeColumns :: Int -> String -> String
+takeColumns _ "" = ""
+takeColumns numCols (c:cs) =
+    let w = V.safeWcwidth c
+    in if w == numCols
+       then [c]
+       else if w < numCols
+            then c : takeColumns (numCols - w) cs
+            else ""
 
 -- | Build a widget from a 'String'. Breaks newlines up and space-pads
 -- short lines out to the length of the longest line.
@@ -146,15 +204,15 @@ str s =
       let theLines = fixEmpty <$> (dropUnused . lines) s
           fixEmpty [] = " "
           fixEmpty l = l
-          dropUnused l = take (availWidth c) <$> take (availHeight c) l
+          dropUnused l = takeColumns (availWidth c) <$> take (availHeight c) l
       case force theLines of
-          [] -> return def
-          [one] -> return $ def & imageL .~ (V.string (c^.attrL) one)
+          [] -> return emptyResult
+          [one] -> return $ emptyResult & imageL .~ (V.string (c^.attrL) one)
           multiple ->
-              let maxLength = maximum $ length <$> multiple
+              let maxLength = maximum $ V.safeWcswidth <$> multiple
                   lineImgs = lineImg <$> multiple
-                  lineImg lStr = V.string (c^.attrL) (lStr ++ replicate (maxLength - length lStr) ' ')
-              in return $ def & imageL .~ (V.vertCat lineImgs)
+                  lineImg lStr = V.string (c^.attrL) (lStr ++ replicate (maxLength - V.safeWcswidth lStr) ' ')
+              in return $ emptyResult & imageL .~ (V.vertCat lineImgs)
 
 -- | Build a widget from a one-line 'T.Text' value. Behaves the same as
 -- 'str'.
@@ -249,7 +307,7 @@ fill :: Char -> Widget n
 fill ch =
     Widget Greedy Greedy $ do
       c <- getContext
-      return $ def & imageL .~ (V.charFill (c^.attrL) ch (c^.availWidthL) (c^.availHeightL))
+      return $ emptyResult & imageL .~ (V.charFill (c^.attrL) ch (c^.availWidthL) (c^.availHeightL))
 
 -- | Vertical box layout: put the specified widgets one above the other
 -- in the specified order (uppermost first). Defers growth policies to
@@ -380,14 +438,14 @@ renderBox br ws =
       let availPrimary = c^.(contextPrimary br)
           availSecondary = c^.(contextSecondary br)
 
-          renderHis _ prev [] = return prev
+          renderHis _ prev [] = return $ DL.toList prev
           renderHis remainingPrimary prev ((i, prim):rest) = do
               result <- render $ limitPrimary br remainingPrimary
                                $ limitSecondary br availSecondary
                                $ cropToContext prim
-              renderHis (remainingPrimary - (result^.imageL.(to $ imagePrimary br))) (prev ++ [(i, result)]) rest
+              renderHis (remainingPrimary - (result^.imageL.(to $ imagePrimary br))) (DL.snoc prev (i, result)) rest
 
-      renderedHis <- renderHis availPrimary [] his
+      renderedHis <- renderHis availPrimary DL.empty his
 
       renderedLows <- case lows of
           [] -> return []
@@ -425,6 +483,7 @@ renderBox br ws =
       cropResultToContext $ Result (concatenatePrimary br paddedImages)
                             (concat $ cursors <$> allTranslatedResults)
                             (concat $ visibilityRequests <$> allTranslatedResults)
+                            (concat $ extents <$> allTranslatedResults)
 
 -- | Limit the space available to the specified widget to the specified
 -- number of columns. This is important for constraining the horizontal
@@ -481,21 +540,28 @@ forceAttr an p =
         c <- getContext
         withReaderT (& ctxAttrMapL .~ (forceAttrMap (attrMapLookup an (c^.ctxAttrMapL)))) (render p)
 
+-- | Override the lookup of 'targetName' to return the attribute value
+-- associated with 'fromName' when rendering the specified widget.
+-- See also 'mapAttrName'.
+overrideAttr :: AttrName -> AttrName -> Widget n -> Widget n
+overrideAttr targetName fromName =
+    updateAttrMap (mapAttrName fromName targetName)
+
 -- | Build a widget directly from a raw Vty image.
 raw :: V.Image -> Widget n
-raw img = Widget Fixed Fixed $ return $ def & imageL .~ img
+raw img = Widget Fixed Fixed $ return $ emptyResult & imageL .~ img
 
 -- | Translate the specified widget by the specified offset amount.
--- Defers to the translated width for growth policy.
+-- Defers to the translated widget for growth policy.
 translateBy :: Location -> Widget n -> Widget n
 translateBy off p =
     Widget (hSize p) (vSize p) $ do
       result <- render p
       return $ addResultOffset off
-             $ result & imageL %~ (V.translate (off^.columnL) (off^.rowL))
+             $ result & imageL %~ (V.translate (off^.locationColumnL) (off^.locationRowL))
 
 -- | Crop the specified widget on the left by the specified number of
--- columns. Defers to the translated width for growth policy.
+-- columns. Defers to the cropped widget for growth policy.
 cropLeftBy :: Int -> Widget n -> Widget n
 cropLeftBy cols p =
     Widget (hSize p) (vSize p) $ do
@@ -506,7 +572,7 @@ cropLeftBy cols p =
              $ result & imageL %~ cropped
 
 -- | Crop the specified widget on the right by the specified number of
--- columns. Defers to the translated width for growth policy.
+-- columns. Defers to the cropped widget for growth policy.
 cropRightBy :: Int -> Widget n -> Widget n
 cropRightBy cols p =
     Widget (hSize p) (vSize p) $ do
@@ -516,7 +582,7 @@ cropRightBy cols p =
       return $ result & imageL %~ cropped
 
 -- | Crop the specified widget on the top by the specified number of
--- rows. Defers to the translated width for growth policy.
+-- rows. Defers to the cropped widget for growth policy.
 cropTopBy :: Int -> Widget n -> Widget n
 cropTopBy rows p =
     Widget (hSize p) (vSize p) $ do
@@ -527,7 +593,7 @@ cropTopBy rows p =
              $ result & imageL %~ cropped
 
 -- | Crop the specified widget on the bottom by the specified number of
--- rows. Defers to the translated width for growth policy.
+-- rows. Defers to the cropped widget for growth policy.
 cropBottomBy :: Int -> Widget n -> Widget n
 cropBottomBy rows p =
     Widget (hSize p) (vSize p) $ do
@@ -624,7 +690,7 @@ viewport vpname typ p =
                                   "in each interface have unique name values. This means either " <>
                                   "using a different name type or adding constructors to your " <>
                                   "existing one and using those to name your widgets.  For more " <>
-                                  "information, see the \"Widget Names\" section of the Brick User Guide."
+                                  "information, see the \"Resource Names\" section of the Brick User Guide."
 
       observeName vpname
 
@@ -708,6 +774,7 @@ viewport vpname typ p =
       case translatedSize of
           (0, 0) -> return $ translated & imageL .~ (V.charFill (c^.attrL) ' ' (c^.availWidthL) (c^.availHeightL))
                                         & visibilityRequestsL .~ mempty
+                                        & extentsL .~ mempty
           _ -> render $ cropToContext
                       $ padBottom Max
                       $ padRight Max
@@ -756,9 +823,9 @@ scrollToView Vertical rq vp = vp & vpTop .~ newVStart
     where
         curStart = vp^.vpTop
         curEnd = curStart + vp^.vpSize._2
-        reqStart = rq^.vrPositionL.rowL
+        reqStart = rq^.vrPositionL.locationRowL
 
-        reqEnd = rq^.vrPositionL.rowL + rq^.vrSizeL._2
+        reqEnd = rq^.vrPositionL.locationRowL + rq^.vrSizeL._2
         newVStart :: Int
         newVStart = if reqStart < vStartEndVisible
                    then reqStart
@@ -770,9 +837,9 @@ scrollToView Horizontal rq vp = vp & vpLeft .~ newHStart
     where
         curStart = vp^.vpLeft
         curEnd = curStart + vp^.vpSize._1
-        reqStart = rq^.vrPositionL.columnL
+        reqStart = rq^.vrPositionL.locationColumnL
 
-        reqEnd = rq^.vrPositionL.columnL + rq^.vrSizeL._1
+        reqEnd = rq^.vrPositionL.locationColumnL + rq^.vrSizeL._1
         newHStart :: Int
         newHStart = if reqStart < hStartEndVisible
                    then reqStart

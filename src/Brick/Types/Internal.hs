@@ -22,10 +22,13 @@ module Brick.Types.Internal
   , EventRO(..)
   , Next(..)
   , Result(..)
+  , Extent(..)
   , CacheInvalidateRequest(..)
+  , BrickEvent(..)
 
   , rsScrollRequestsL
   , viewportMapL
+  , clickableNamesL
   , renderCacheL
   , observedNamesL
   , vpSize
@@ -33,7 +36,9 @@ module Brick.Types.Internal
   , vpTop
   , imageL
   , cursorsL
+  , extentsL
   , visibilityRequestsL
+  , emptyResult
   )
 where
 
@@ -46,8 +51,7 @@ import Lens.Micro.TH (makeLenses)
 import Lens.Micro.Internal (Field1, Field2)
 import qualified Data.Set as S
 import qualified Data.Map as M
-import Graphics.Vty (Vty, DisplayRegion, Image, emptyImage)
-import Data.Default (Default(..))
+import Graphics.Vty (Vty, Event, Button, Modifier, DisplayRegion, Image, emptyImage)
 
 import Brick.Types.TH
 import Brick.AttrMap (AttrName, AttrMap)
@@ -99,8 +103,17 @@ data EventState n = ES { esScrollRequests :: [(n, ScrollRequest)]
                        , cacheInvalidateRequests :: [CacheInvalidateRequest n]
                        }
 
+-- | An extent of a named area: its size, location, and origin.
+data Extent n = Extent { extentName      :: n
+                       , extentUpperLeft :: Location
+                       , extentSize      :: (Int, Int)
+                       , extentOffset    :: Location
+                       }
+              deriving (Show)
+
 data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
                          , eventVtyHandle :: Maybe Vty
+                         , latestExtents :: [Extent n]
                          }
 
 -- | The type of actions to take upon completion of an event handler.
@@ -133,17 +146,18 @@ instance Field2 Location Location Int Int where
 -- | The class of types that behave like terminal locations.
 class TerminalLocation a where
     -- | Get the column out of the value
-    columnL :: Lens' a Int
-    column :: a -> Int
+    locationColumnL :: Lens' a Int
+    locationColumn :: a -> Int
+
     -- | Get the row out of the value
-    rowL :: Lens' a Int
-    row :: a -> Int
+    locationRowL :: Lens' a Int
+    locationRow :: a -> Int
 
 instance TerminalLocation Location where
-    columnL = _1
-    column (Location t) = fst t
-    rowL = _2
-    row (Location t) = snd t
+    locationColumnL = _1
+    locationColumn (Location t) = fst t
+    locationRowL = _2
+    locationRow (Location t) = snd t
 
 -- | The origin (upper-left corner).
 origin :: Location
@@ -174,19 +188,34 @@ data Result n =
            , visibilityRequests :: [VisibilityRequest]
            -- ^ The list of visibility requests made by widgets rendered
            -- while rendering this one (used by viewports)
+           , extents :: [Extent n]
            }
            deriving Show
 
 suffixLenses ''Result
 
-instance Default (Result n) where
-    def = Result emptyImage [] []
+emptyResult :: Result n
+emptyResult = Result emptyImage [] [] []
+
+-- | The type of events.
+data BrickEvent n e = VtyEvent Event
+                    -- ^ The event was a Vty event.
+                    | AppEvent e
+                    -- ^ The event was an application event.
+                    | MouseDown n Button [Modifier] Location
+                    -- ^ A mouse-down event on the specified region was
+                    -- received.
+                    | MouseUp n (Maybe Button) Location
+                    -- ^ A mouse-down event on the specified region was
+                    -- received.
+                    deriving (Show, Eq)
 
 data RenderState n =
     RS { viewportMap :: M.Map n Viewport
        , rsScrollRequests :: [(n, ScrollRequest)]
        , observedNames :: !(S.Set n)
        , renderCache :: M.Map n (Result n)
+       , clickableNames :: [n]
        }
 
 -- | The rendering context. This tells widgets how to render: how much

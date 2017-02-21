@@ -7,7 +7,6 @@
 module Main where
 
 import Data.Monoid
-import Data.Default
 import qualified Graphics.Vty as V
 import Control.Concurrent.MVar
 import Lens.Micro                       ( (<&>) )
@@ -19,6 +18,8 @@ import Brick.Widgets.Core               ( vBox
 import qualified Reactive.Banana as Banana
 import qualified Reactive.Banana.Frameworks as Banana
 import           Brick.MainBanana
+import           Graphics.Vty(defAttr)
+import           Brick.AttrMap(attrMap)
 
 
 
@@ -55,7 +56,7 @@ main = do
             Just (V.EvKey V.KEsc _) -> halt
             _                       -> redraw
 
-      return (nextE, drawUI <$> resultB, pure $ const Nothing, pure $ def)
+      return (nextE, drawUI <$> resultB, pure $ const Nothing, pure $ attrMap defAttr [])
 
   Banana.actuate network
   startupH ()

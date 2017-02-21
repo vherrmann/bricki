@@ -8,7 +8,6 @@ module Main where
 
 import Control.Monad (void, forever)
 import Control.Concurrent (threadDelay, forkIO)
-import Data.Default
 import Data.Monoid
 import qualified Graphics.Vty as V
 import Control.Concurrent.MVar
@@ -19,6 +18,8 @@ import Brick.Widgets.Core
 import qualified Reactive.Banana as Banana
 import qualified Reactive.Banana.Frameworks as Banana
 import           Brick.MainBanana
+import           Graphics.Vty(defAttr)
+import           Brick.AttrMap(attrMap)
 
 import Lens.Micro ((<&>))
 
@@ -58,7 +59,7 @@ main = do
       ( Banana.unionWith (<>) nextE1 nextE2
       , drawUI <$> lastEvent <*> counter
       , pure $ const Nothing
-      , pure $ def
+      , pure $ attrMap defAttr []
       )
 
   Banana.actuate network

@@ -14,13 +14,14 @@ import qualified Reactive.Banana.Frameworks as Banana
 
 import qualified Graphics.Vty as V
 
+import           Graphics.Vty(defAttr)
+import           Brick.AttrMap(attrMap)
+
 import Control.Concurrent.MVar
 
 import Lens.Micro ((<&>))
 
 import Brick.Widgets.Core
-
-import Data.Default
 
 
 
@@ -59,7 +60,7 @@ main = do
             <*> lengthWidget
 
     let cursorB = pure $ const Nothing
-    let attrB   = pure $ def
+    let attrB   = pure $ attrMap defAttr []
 
     return $ (nextE, widgetsB, cursorB, attrB)
 

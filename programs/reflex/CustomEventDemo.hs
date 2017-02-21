@@ -8,7 +8,6 @@ module Main where
 
 import Control.Monad (void, forever)
 import Control.Concurrent (threadDelay, forkIO)
-import Data.Default
 import Data.Monoid
 import qualified Graphics.Vty as V
 import           Control.Monad.IO.Class           (liftIO)
@@ -19,6 +18,8 @@ import Brick.Widgets.Core
 import qualified Reflex as R
 import qualified Reflex.Host.App as RH
 import           Brick.MainReflex
+import           Graphics.Vty(defAttr)
+import           Brick.AttrMap(attrMap)
 
 
 
@@ -56,5 +57,5 @@ main = R.runSpiderHost $ RH.hostApp $ do
       ( shouldHaltE
       , drawUI <$> lastEvent <*> counter
       , pure $ const Nothing
-      , pure $ def
+      , pure $ attrMap defAttr []
       )

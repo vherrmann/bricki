@@ -37,6 +37,7 @@ module Brick.Widgets.List
   , listSelectedElement
   , listClear
   , listReverse
+  , listModify
 
   -- * Attributes
   , listAttr
@@ -76,14 +77,14 @@ data List n e =
          , listSelected :: !(Maybe Int)
          , listName :: n
          , listItemHeight :: Int
-         } deriving (Functor, Foldable, Traversable)
+         } deriving (Functor, Foldable, Traversable, Show)
 
 suffixLenses ''List
 
 instance Named (List n e) n where
     getName = listName
 
-handleListEvent :: (Show n, Ord n) => Event -> List n e -> EventM n (List n e)
+handleListEvent :: (Ord n) => Event -> List n e -> EventM n (List n e)
 handleListEvent e theList =
     case e of
         EvKey KUp [] -> return $ listMoveUp theList
@@ -229,11 +230,12 @@ listRemove pos l | V.null (l^.listElementsL) = l
          & listElementsL .~ es'
 
 -- | Replace the contents of a list with a new set of elements and
--- update the new selected index. If the specified selected index (via
--- 'Just') is not in the list bounds, zero is used instead.
+-- update the new selected index. If the list is empty, empty selection is used
+-- instead. Otherwise, if the specified selected index (via 'Just') is not in
+-- the list bounds, zero is used instead.
 listReplace :: V.Vector e -> Maybe Int -> List n e -> List n e
 listReplace es idx l =
-    let newSel = clamp 0 (V.length es - 1) <$> idx
+    let newSel = if V.null es then Nothing else clamp 0 (V.length es - 1) <$> idx
     in l & listSelectedL .~ newSel
          & listElementsL .~ es
 
@@ -280,3 +282,11 @@ listReverse :: List n e -> List n e
 listReverse theList = theList & listElementsL %~ V.reverse & listSelectedL .~ newSel
   where n = V.length (listElements theList)
         newSel = (-) <$> pure (n-1) <*> listSelected theList
+
+-- | Apply a function to the selected element. If no element is selected
+-- the list is not modified.
+listModify :: (e -> e) -> List n e -> List n e
+listModify f l = case listSelectedElement l of
+  Nothing -> l
+  Just (n,e) -> let es = V.update (l^.listElementsL) (return (n, f e))
+                in listReplace es (Just n) l

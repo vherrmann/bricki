@@ -2,6 +2,144 @@
 Brick changelog
 ---------------
 
+0.17
+----
+
+Package changes:
+* Updated to depend on Vty 5.15.
+* Updated to remove dependency on data-default.
+* Discontinued support for GHC versions prior to 7.10.1.
+
+API changes:
+* Removed Data.Default instances for AttrName, AttrMap, Result, and
+  BorderStyle (use Monoid instances instead where possible).
+* Added defaultBorderStyle :: BorderStyle.
+* Added emptyResult :: Result n.
+
+0.16
+----
+
+This release includes a breaking API change:
+* Brick now uses bounded channels (Brick.BChan.BChan) for event
+  communication rather than Control.Concurrent.Chan's unbounded channels
+  to improve memory consumption for programs with runaway event
+  production (thanks Joshua Chia)
+
+Other API changes:
+* Brick.List got a new function, listModify, for modifying the selected
+  element (thanks @diegospd)
+
+Performance improvements:
+* hBox and vBox now use the more efficient DList data structure when
+  rendering to improve performance for boxes with many elements (thanks
+  Mitsutoshi Aoe)
+
+0.15.2
+------
+
+Bug fixes:
+* viewport: do not cull cursor locations on empty viewport contents
+  (fixes #105)
+* User guide CounterEvent type fix (thanks @diegospd)
+
+0.15.1
+------
+
+Bug fixes:
+* List: fixed empty list validation in listReplace (thanks Joshua Chia)
+
+0.15
+----
+
+Demo changes:
+* MouseDemo: add an editor and use mouse events to move the cursor
+* MouseDemo: Enhance MouseDemo to show interaction between 'clickable'
+  and viewports (thanks Kevin Quick)
+
+New features:
+* Editors now report mouse click events
+
+API changes:
+* Rename TerminalLocation row/column fields to avoid commonplace name
+  clashes; rename row/column to locationRow/locationColumn (fixes #96)
+
+Bug fixes:
+* Core: make cropToContext also crop extents (fixes #101)
+* viewport: if the sub-widget is not rendered, also cull all extents and
+  cursor locations
+
+Documentation changes:
+* User Guide updates: minor fixes, updates to content on custom widgets,
+  wide character support, and examples (thanks skapazzo@inventati.org,
+  Kevin Quick)
+
+0.14
+----
+
+This release added support for wide characters. In particular, wide
+characters can now be entered into the text editor widget and used in
+'str' and 'txt' widgets.
+
+0.13
+----
+
+API changes:
+ * Mouse mode is no longer enabled by default.
+ * customMain's event channel parameter is now optional
+ * FocusRing now provides a Functor instance (thanks Ian Jeffries)
+
+0.12
+----
+
+This release primarily adds support for mouse interaction. For details,
+see the Mouse Support section of the User Guide. This release also
+includes breaking API changes for the App type. Here's a migration
+guide:
+
+ * Event handlers now take "BrickEvent n e" instead of "e", where "e"
+   was the custom event type used before this change. To recover your
+   own custom events, pattern-match on "AppEvent"; to recover Vty input
+   events, pattern-match on "VtyEvent".
+ * appLiftVtyEvent went away and can just be removed from your App
+   record constructor.
+ * If you aren't using the custom event type or were just using Vty's
+   "Event" type as your App's event type, you can set your event type to
+   just "e" because you'll now be able to get Vty events regardless of
+   whether you use a custom event type.
+
+API changes:
+ * Added the Widget combinator "clickable" to indicate that a widget
+   should generate mouse click events
+ * Added the Extent data type and the "reportExtent" widget combinator
+   to report the positions and sizes of widgets
+ * Rendering "Result" values now include reported extents and update
+   their offsets (adds "extents" field and "extentsL" lens)
+ * Added "lookupExtent", "findClickedExtents", and "clickedExtent" in
+   EventM to find extents and check them for mouse clicks
+ * Removed appLiftVtyEvent. Instead of wrapping Vty's events in your own
+   type, you now get a "BrickEvent" that always contains Vty events but
+   has the ability to embed *your* custom events. See the User Guide for
+   details.
+ * Added demo program MouseDemo.hs
+ * Added demo program ProgressBarDemo.hs (thanks Kevin Quick)
+ * Added mapAttrname, mapAttrNames, and overrideAttr functions (thanks
+   Kevin Quick)
+ * Make handleEventLensed polymorphic over event type to allow use with
+   custom events (thanks Kevin Quick)
+ * Added Ord constraint to some library startup functions
+
+Bug fixes:
+ * Added Show instance for Editor, List (fixes #63)
+
+Documentation changes:
+ * Updated documentation to use new "resource name" terminology to
+   reduce confusion and better explain the purpose of names.
+ * Updated user guide with sections on mouse support, the rendering
+   cache, resource names, paste mode, and extents
+
+Package changes:
+ * Depend on Vty 5.11.3 to get mouse mode support
+
 0.11
 ----
 

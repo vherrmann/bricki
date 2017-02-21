@@ -6,17 +6,20 @@ import Lens.Micro ((.~), (^.), (&))
 import Lens.Micro.TH (makeLenses)
 import Control.Monad (void)
 import Data.Monoid
-import Data.Default
 import qualified Graphics.Vty as V
 
 import Brick.Main
   ( App(..), neverShowCursor, defaultMain
   , suspendAndResume, halt, continue
   )
+import Brick.AttrMap
+  ( attrMap
+  )
 import Brick.Types
   ( Widget
   , EventM
   , Next
+  , BrickEvent(..)
   )
 import Brick.Widgets.Core
   ( vBox
@@ -36,8 +39,8 @@ drawUI st = [ui]
                   , str "(Press Esc to quit or Space to ask for input)"
                   ]
 
-appEvent :: St -> V.Event -> EventM () (Next St)
-appEvent st e =
+appEvent :: St -> BrickEvent () e -> EventM () (Next St)
+appEvent st (VtyEvent e) =
     case e of
         V.EvKey V.KEsc [] -> halt st
         V.EvKey (V.KChar ' ') [] -> suspendAndResume $ do
@@ -45,20 +48,20 @@ appEvent st e =
             s <- getLine
             return $ st & stExternalInput .~ s
         _ -> continue st
+appEvent st _ = continue st
 
 initialState :: St
 initialState =
     St { _stExternalInput = ""
        }
 
-theApp :: App St V.Event ()
+theApp :: App St e ()
 theApp =
     App { appDraw = drawUI
         , appChooseCursor = neverShowCursor
         , appHandleEvent = appEvent
         , appStartEvent = return
-        , appAttrMap = const def
-        , appLiftVtyEvent = id
+        , appAttrMap = const $ attrMap V.defAttr []
         }
 
 main :: IO ()

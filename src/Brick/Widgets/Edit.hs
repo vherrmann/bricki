@@ -45,7 +45,6 @@ import Brick.Types
 import Brick.Widgets.Core
 import Brick.AttrMap
 
-
 -- | Editor state.  Editors support the following events by default:
 --
 -- * Ctrl-a: go to beginning of line
@@ -66,6 +65,14 @@ data Editor t n =
            }
 
 suffixLenses ''Editor
+
+instance (Show t, Show n) => Show (Editor t n) where
+    show e =
+        concat [ "Editor { "
+               , "editContents = " <> show (editContents e)
+               , ", editorName = " <> show (editorName e)
+               , "}"
+               ]
 
 instance Named (Editor t n) n where
     getName = editorName
@@ -139,8 +146,10 @@ editFocusedAttr = editAttr <> "focused"
 getEditContents :: Monoid t => Editor t n -> [t]
 getEditContents e = Z.getText $ e^.editContentsL
 
--- | Turn an editor state value into a widget
-renderEditor :: (Ord n, Show n, Monoid t)
+-- | Turn an editor state value into a widget. This uses the editor's
+-- name for its scrollable viewport handle and the name is also used to
+-- report mouse events.
+renderEditor :: (Ord n, Show n, Monoid t, TextWidth t, Z.GenericTextZipper t)
              => Bool
              -- ^ Whether the editor has focus. It will report a cursor
              -- position if and only if it has focus.
@@ -148,15 +157,29 @@ renderEditor :: (Ord n, Show n, Monoid t)
              -- ^ The editor.
              -> Widget n
 renderEditor foc e =
-    let cp = Z.cursorPosition $ e^.editContentsL
-        cursorLoc = Location (cp^._2, cp^._1)
+    let cp = Z.cursorPosition z
+        z = e^.editContentsL
+        toLeft = Z.take (cp^._2) (Z.currentLine z)
+        cursorLoc = Location (textWidth toLeft, cp^._1)
         limit = case e^.editContentsL.to Z.getLineLimit of
             Nothing -> id
             Just lim -> vLimit lim
+        atChar = charAtCursor $ e^.editContentsL
+        atCharWidth = maybe 1 textWidth atChar
     in withAttr (if foc then editFocusedAttr else editAttr) $
        limit $
        viewport (e^.editorNameL) Both $
+       clickable (e^.editorNameL) $
        (if foc then showCursor (e^.editorNameL) cursorLoc else id) $
-       visibleRegion cursorLoc (1, 1) $
+       visibleRegion cursorLoc (atCharWidth, 1) $
        e^.editDrawContentsL $
        getEditContents e
+
+charAtCursor :: (Z.GenericTextZipper t) => Z.TextZipper t -> Maybe t
+charAtCursor z =
+    let col = snd $ Z.cursorPosition z
+        curLine = Z.currentLine z
+        toRight = Z.drop col curLine
+    in if Z.length toRight > 0
+       then Just $ Z.take 1 toRight
+       else Nothing

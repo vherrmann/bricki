@@ -25,6 +25,7 @@ module Brick.Types
   -- * Event-handling types
   , EventM(..)
   , Next
+  , BrickEvent(..)
   , handleEventLensed
 
   -- * Rendering infrastructure
@@ -42,12 +43,15 @@ module Brick.Types
 
   -- ** Rendering results
   , Result(..)
+  , emptyResult
   , lookupAttrName
+  , Extent(..)
 
   -- ** Rendering result lenses
   , imageL
   , cursorsL
   , visibilityRequestsL
+  , extentsL
 
   -- ** Visibility requests
   , VisibilityRequest(..)
@@ -74,7 +78,7 @@ import Lens.Micro (_1, _2, to, (^.), (&), (.~), Lens')
 import Lens.Micro.Type (Getting)
 import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
-import Graphics.Vty (Event, Attr)
+import Graphics.Vty (Attr)
 import Control.Monad.IO.Class
 
 import Brick.Types.TH
@@ -97,9 +101,9 @@ handleEventLensed :: a
                   -> Lens' a b
                   -- ^ The lens to use to extract and store the target
                   -- of the event.
-                  -> (Event -> b -> EventM n b)
+                  -> (e -> b -> EventM n b)
                   -- ^ The event handler.
-                  -> Event
+                  -> e
                   -- ^ The event to handle.
                   -> EventM n a
 handleEventLensed v target handleEvent ev = do
@@ -151,10 +155,10 @@ attrL :: forall r. Getting r Context Attr
 attrL = to (\c -> attrMapLookup (c^.ctxAttrNameL) (c^.ctxAttrMapL))
 
 instance TerminalLocation (CursorLocation n) where
-    columnL = cursorLocationL._1
-    column = column . cursorLocation
-    rowL = cursorLocationL._2
-    row = row . cursorLocation
+    locationColumnL = cursorLocationL._1
+    locationColumn = locationColumn . cursorLocation
+    locationRowL = cursorLocationL._2
+    locationRow = locationRow . cursorLocation
 
 -- | Given an attribute name, obtain the attribute for the attribute
 -- name by consulting the context's attribute map.

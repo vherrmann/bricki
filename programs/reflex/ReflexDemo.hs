@@ -11,8 +11,8 @@ import qualified Reflex.Host.App as RH
 
 import Lens.Micro ((<&>))
 
-import Data.Default
-
+import Graphics.Vty(defAttr)
+import Brick.AttrMap(attrMap)
 import Graphics.Vty.Input.Events
 import Brick.Widgets.Core
 import Brick.MainReflex
@@ -53,6 +53,6 @@ main = do
               <*> lengthWidget
 
       let cursorDyn = pure $ const Nothing
-      let attrDyn   = pure $ def
+      let attrDyn   = pure $ attrMap defAttr []
 
       return $ (shouldHaltE, widgetsDyn, cursorDyn, attrDyn)

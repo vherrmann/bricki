@@ -35,6 +35,8 @@ module Brick.AttrMap
   , setDefault
   , applyAttrMappings
   , mergeWithDefault
+  , mapAttrName
+  , mapAttrNames
   )
 where
 
@@ -47,7 +49,6 @@ import qualified Data.Map as M
 import Data.Maybe (catMaybes)
 import Data.List (inits)
 import Data.String (IsString(..))
-import Data.Default (Default(..))
 
 import Graphics.Vty (Attr(..), MaybeDefault(..))
 
@@ -66,9 +67,6 @@ import Graphics.Vty (Attr(..), MaybeDefault(..))
 data AttrName = AttrName [String]
               deriving (Show, Eq, Ord)
 
-instance Default AttrName where
-    def = mempty
-
 instance Monoid AttrName where
     mempty = AttrName []
     mappend (AttrName as) (AttrName bs) = AttrName $ as `mappend` bs
@@ -80,9 +78,6 @@ instance IsString AttrName where
 data AttrMap = AttrMap Attr (M.Map AttrName Attr)
              | ForceAttr Attr
              deriving Show
-
-instance Default AttrMap where
-    def = AttrMap def mempty
 
 -- | Create an attribute name from a string.
 attrName :: String -> AttrName
@@ -169,3 +164,18 @@ combineMDs _ v = v
 applyAttrMappings :: [(AttrName, Attr)] -> AttrMap -> AttrMap
 applyAttrMappings _ (ForceAttr a) = ForceAttr a
 applyAttrMappings ms (AttrMap d m) = AttrMap d ((M.fromList ms) `M.union` m)
+
+-- | Update an attribute map such that a lookup of 'ontoName' returns
+-- the attribute value specified by 'fromName'.  This is useful for
+-- composite widgets with specific attribute names mapping those names
+-- to the sub-widget's expected name when calling that sub-widget's
+-- rendering function.  See the ProgressBarDemo for an example usage,
+-- and 'overrideAttr' for an alternate syntax.
+mapAttrName :: AttrName -> AttrName -> AttrMap -> AttrMap
+mapAttrName fromName ontoName inMap =
+    applyAttrMappings [(ontoName, attrMapLookup fromName inMap)] inMap
+
+-- | Map several attributes to return the value associated with an
+-- alternate name.  Applies 'mapAttrName' across a list of mappings.
+mapAttrNames :: [(AttrName, AttrName)] -> AttrMap -> AttrMap
+mapAttrNames names inMap = foldr (uncurry mapAttrName) inMap names

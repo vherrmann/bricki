@@ -7,7 +7,6 @@
 module Main where
 
 import Data.Monoid
-import Data.Default
 import qualified Graphics.Vty as V
 
 import qualified Reflex as R
@@ -18,6 +17,8 @@ import Brick.Types                         ( Widget )
 import Brick.Widgets.Core                  ( vBox
                                            , str
                                            )
+import           Graphics.Vty(defAttr)
+import           Brick.AttrMap(attrMap)
 
 
 
@@ -55,5 +56,5 @@ main = R.runSpiderHost $ RH.hostApp $ do
       ( shouldHaltE
       , drawUI <$> (resultDyn <* redrawDyn)
       , pure $ neverShowCursor ()
-      , pure $ def
+      , pure $ attrMap defAttr []
       )

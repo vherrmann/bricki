@@ -19,9 +19,10 @@ import qualified Reflex.Host.Class as R
 import qualified Reflex.Host.App as RH
 
 import           Brick.Types                      ( Widget
-                                                  , rowL
-                                                  , columnL
+                                                  , locationRowL
+                                                  , locationColumnL
                                                   , CursorLocation(..)
+                                                  , Extent
                                                   )
 import           Brick.Types.Internal             ( RenderState(..)
                                                   )
@@ -36,7 +37,6 @@ import           Brick.Main                       ( neverShowCursor
 import qualified Data.Map as M
 import qualified Data.Set as S
 
-import           Data.Default
 import           Control.Monad
 import           Data.Functor
 import           Control.Concurrent
@@ -59,6 +59,7 @@ import           Graphics.Vty
                                                   , displayBounds
                                                   , shutdown
                                                   , mkVty
+                                                  , defaultConfig
                                                   )
 import           Graphics.Vty.Input               ( _eventChannel
                                                   )
@@ -145,7 +146,7 @@ brickWrapper
      ) -- ^ one line :/
   -> RH.AppHost t ()
 brickWrapper interfaceF = do
-  let initialRS = RS M.empty [] S.empty mempty
+  let initialRS = RS M.empty [] S.empty mempty []
 
   (eventEvent   , eventH   ) <- RH.newExternalEvent
   (shutdownEvent, shutdownH) <- RH.newExternalEvent
@@ -181,7 +182,7 @@ brickWrapper interfaceF = do
       <&> \case
             This{} -> \_ -> liftIO $ do
               vty <- liftIO $ do
-                x <- mkVty def
+                x <- mkVty defaultConfig
                 return x
               let
                 loop = forever $ do
@@ -236,12 +237,12 @@ brickWrapper interfaceF = do
         case mState of
           Nothing       -> pure ()
           Just (vty, _) -> liftIO $ do
-            renderState  <- readIORef rsRef
-            renderState' <- render vty
-                                   widgetStack
-                                   chooseCursor
-                                   attrs
-                                   renderState
+            renderState           <- readIORef rsRef
+            (renderState', _exts) <- render vty
+                                            widgetStack
+                                            chooseCursor
+                                            attrs
+                                            renderState
             writeIORef rsRef renderState'
       | widgetStack  <- widgetDyn
       , chooseCursor <- cursorDyn
@@ -257,15 +258,15 @@ render
   -> ([CursorLocation n] -> Maybe (CursorLocation n))
   -> AttrMap
   -> RenderState n
-  -> IO (RenderState n)
+  -> IO (RenderState n, [Extent n])
 render vty widgetStack chooseCursor attrMapCur rs = do
   sz <- displayBounds $ outputIface vty
-  let (newRS, pic, theCursor) =
+  let (newRS, pic, theCursor, exts) =
         renderFinal attrMapCur widgetStack sz chooseCursor rs
       picWithCursor = case theCursor of
         Nothing  -> pic { picCursor = NoCursor }
-        Just loc -> pic { picCursor = Cursor (loc ^. columnL) (loc ^. rowL) }
+        Just loc -> pic { picCursor = Cursor (loc ^. locationColumnL) (loc ^. locationRowL) }
 
   update vty picWithCursor
 
-  return newRS
+  return (newRS, exts)
