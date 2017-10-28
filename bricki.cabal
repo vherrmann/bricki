@@ -1,42 +1,19 @@
-name:                brick
-version:             0.28
+name:                bricki
+version:             0.28.0.100
 synopsis:            A declarative terminal user interface library
 description:
-  Write terminal applications painlessly with 'brick'! You write an
-  event handler and a drawing function and the library does the rest.
-  .
-  .
-  > module Main where
-  >
-  > import Brick
-  >
-  > ui :: Widget ()
-  > ui = str "Hello, world!"
-  >
-  > main :: IO ()
-  > main = simpleMain ui
-  .
-  .
-  To get started, see:
-  .
-  * <https://github.com/jtdaugherty/brick/blob/master/README.md The README>
-  .
-  * The <https://github.com/jtdaugherty/brick/blob/master/docs/guide.rst Brick user guide>
-  .
-  * The demonstration programs in the 'programs' directory
-  .
-  .
-  This package deprecates <http://hackage.haskell.org/package/vty-ui vty-ui>.
+  Fork of the brick library by Jonathan Daugherty with internals exposed.
+  Exposing internals is necessary for writing FRP interfaces of brick.
 license:             BSD3
 license-file:        LICENSE
 author:              Jonathan Daugherty <cygnus@foobox.com>
-maintainer:          Jonathan Daugherty <cygnus@foobox.com>
+maintainer:          Lennart Spitzner <hexagoxel@hexagoxel.de>
 copyright:           (c) Jonathan Daugherty 2015-2016
 category:            Graphics
 build-type:          Simple
 cabal-version:       >=1.18
-Homepage:            https://github.com/jtdaugherty/brick/
-Bug-reports:         https://github.com/jtdaugherty/brick/issues
+Homepage:            https://github.com/lspitzner/bricki/
+Bug-reports:         https://github.com/lspitzner/bricki/issues
 
 extra-doc-files:     README.md,
                      docs/guide.rst,
@@ -75,10 +52,10 @@ library
     Brick.Widgets.List
     Brick.Widgets.ProgressBar
     Data.Text.Markup
-  other-modules:
-    Brick.Types.TH
     Brick.Types.Internal
     Brick.Widgets.Internal
+  other-modules:
+    Brick.Types.TH
 
   build-depends:       base <= 5,
                        vty >= 5.18.1,
@@ -107,7 +84,7 @@ executable brick-readme-demo
   default-extensions:  CPP
   main-is:             ReadmeDemo.hs
   build-depends:       base,
-                       brick,
+                       bricki,
                        text
 
 executable brick-text-wrap-demo
@@ -119,7 +96,7 @@ executable brick-text-wrap-demo
   default-extensions:  CPP
   main-is:             TextWrapDemo.hs
   build-depends:       base,
-                       brick,
+                       bricki,
                        text,
                        word-wrap
 
@@ -132,7 +109,7 @@ executable brick-cache-demo
   default-extensions:  CPP
   main-is:             CacheDemo.hs
   build-depends:       base,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -146,7 +123,7 @@ executable brick-visibility-demo
   default-language:    Haskell2010
   main-is:             VisibilityDemo.hs
   build-depends:       base,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -161,7 +138,7 @@ executable brick-viewport-scroll-demo
   default-extensions:  CPP
   main-is:             ViewportScrollDemo.hs
   build-depends:       base,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -174,7 +151,7 @@ executable brick-dialog-demo
   default-language:    Haskell2010
   main-is:             DialogDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -187,7 +164,7 @@ executable brick-mouse-demo
   default-language:    Haskell2010
   main-is:             MouseDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -202,7 +179,7 @@ executable brick-layer-demo
   default-language:    Haskell2010
   main-is:             LayerDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -216,7 +193,7 @@ executable brick-suspend-resume-demo
   default-language:    Haskell2010
   main-is:             SuspendAndResumeDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -230,7 +207,7 @@ executable brick-padding-demo
   default-language:    Haskell2010
   main-is:             PaddingDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -243,7 +220,7 @@ executable brick-attr-demo
   default-language:    Haskell2010
   main-is:             AttrDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -256,7 +233,7 @@ executable brick-markup-demo
   default-language:    Haskell2010
   main-is:             MarkupDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -269,7 +246,7 @@ executable brick-list-demo
   default-language:    Haskell2010
   main-is:             ListDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -283,7 +260,7 @@ executable brick-list-vi-demo
   default-language:    Haskell2010
   main-is:             ListViDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -297,7 +274,7 @@ executable brick-custom-event-demo
   default-language:    Haskell2010
   main-is:             CustomEventDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
@@ -311,7 +288,7 @@ executable brick-fill-demo
   default-language:    Haskell2010
   main-is:             FillDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -324,7 +301,7 @@ executable brick-hello-world-demo
   default-language:    Haskell2010
   main-is:             HelloWorldDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -337,7 +314,7 @@ executable brick-edit-demo
   default-language:    Haskell2010
   main-is:             EditDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        vector,
@@ -353,7 +330,7 @@ executable brick-border-demo
   default-language:    Haskell2010
   main-is:             BorderDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
@@ -367,7 +344,7 @@ executable brick-progressbar-demo
   default-language:    Haskell2010
   main-is:             ProgressBarDemo.hs
   build-depends:       base <= 5,
-                       brick,
+                       bricki,
                        vty >= 5.18.1,
                        text,
                        microlens
