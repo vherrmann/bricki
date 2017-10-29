@@ -58,7 +58,7 @@ library
     Brick.Types.TH
 
   build-depends:       base <= 5,
-                       vty >= 5.18.1,
+                       vty >= 5.18.1 && <5.19,
                        transformers,
                        data-clist >= 0.1,
                        dlist,
