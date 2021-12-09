@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 -- | This module provides types and functions for managing an attribute
 -- map which maps attribute names ('AttrName') to attributes ('Attr').
 -- This module is designed to be used with the 'OverloadedStrings'
@@ -15,7 +17,7 @@
 -- Attribute names are mapped to attributes, but some attributes may
 -- be partial (specify only a foreground or background color). When
 -- attribute name lookups occur, the attribute corresponding to a more
--- specific name ('parent <> child' as above) is sucessively merged with
+-- specific name ('parent <> child' as above) is successively merged with
 -- the parent attribute ('parent' as above) all the way to the "root"
 -- of the attribute map, the map's default attribute. In this way, more
 -- specific attributes inherit what they don't specify from more general
@@ -29,6 +31,8 @@ module Brick.AttrMap
   , attrMap
   , forceAttrMap
   , attrName
+  -- * Inspection
+  , attrNameComponents
   -- * Finding attributes from names
   , attrMapLookup
   -- * Manipulating attribute maps
@@ -41,17 +45,17 @@ module Brick.AttrMap
   )
 where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-import Data.Monoid
-#endif
+import qualified Data.Semigroup as Sem
 
+import Control.DeepSeq
+import Data.Bits ((.|.))
 import qualified Data.Map as M
 import Data.Maybe (catMaybes)
 import Data.List (inits)
 import Data.String (IsString(..))
+import GHC.Generics (Generic)
 
-import Graphics.Vty (Attr(..), MaybeDefault(..))
+import Graphics.Vty (Attr(..), MaybeDefault(..), Style)
 
 -- | An attribute name. Attribute names are hierarchical; use 'mappend'
 -- ('<>') to assemble them. Hierarchy in an attribute name is used to
@@ -66,11 +70,14 @@ import Graphics.Vty (Attr(..), MaybeDefault(..))
 -- "header" <> "clock" <> "seconds"
 -- @
 data AttrName = AttrName [String]
-              deriving (Show, Eq, Ord)
+              deriving (Show, Read, Eq, Ord, Generic, NFData)
+
+instance Sem.Semigroup AttrName where
+    (AttrName as) <> (AttrName bs) = AttrName $ as `mappend` bs
 
 instance Monoid AttrName where
     mempty = AttrName []
-    mappend (AttrName as) (AttrName bs) = AttrName $ as `mappend` bs
+    mappend = (Sem.<>)
 
 instance IsString AttrName where
     fromString = AttrName . (:[])
@@ -78,11 +85,15 @@ instance IsString AttrName where
 -- | An attribute map which maps 'AttrName' values to 'Attr' values.
 data AttrMap = AttrMap Attr (M.Map AttrName Attr)
              | ForceAttr Attr
-             deriving Show
+             deriving (Show, Generic, NFData)
 
 -- | Create an attribute name from a string.
 attrName :: String -> AttrName
 attrName = AttrName . (:[])
+
+-- | Get the components of an attribute name.
+attrNameComponents :: AttrName -> [String]
+attrNameComponents (AttrName cs) = cs
 
 -- | Create an attribute map.
 attrMap :: Attr
@@ -122,12 +133,16 @@ mergeWithDefault a (AttrMap d _) = combineAttrs d a
 
 -- | Look up the specified attribute name in the map. Map lookups
 -- proceed as follows. If the attribute map is forcing all lookups to a
--- specific attribute, that attribute is returned. If the attribute name
--- is empty, the map's default attribute is returned. If the attribute
--- name is non-empty, very subsequence of names from the specified name
--- are used to perform a lookup, and the results are combined as in
--- 'mergeWithDefault', with more specific results taking precedence over
--- less specific ones.
+-- specific attribute, that attribute is returned along with its style
+-- settings. If the attribute name is empty, the map's default attribute
+-- is returned. If the attribute name is non-empty, every subsequence of
+-- names from the specified name are used to perform a lookup and the
+-- results are combined as in 'mergeWithDefault', with more specific
+-- results taking precedence over less specific ones. As attributes are
+-- merged, styles are also merged. If a more specific attribute name
+-- introduces a style (underline, say) and a less specific attribute
+-- name introduces an additional style (bold, say) then the final result
+-- will include both styles.
 --
 -- For example:
 --
@@ -157,7 +172,7 @@ getDefaultAttr (AttrMap d _) = d
 
 combineAttrs :: Attr -> Attr -> Attr
 combineAttrs (Attr s1 f1 b1 u1) (Attr s2 f2 b2 u2) =
-    Attr (s1 `combineMDs` s2)
+    Attr (s1 `combineStyles` s2)
          (f1 `combineMDs` f2)
          (b1 `combineMDs` b2)
          (u1 `combineMDs` u2)
@@ -166,6 +181,12 @@ combineMDs :: MaybeDefault a -> MaybeDefault a -> MaybeDefault a
 combineMDs _ (SetTo v) = SetTo v
 combineMDs (SetTo v) _ = SetTo v
 combineMDs _ v = v
+
+combineStyles :: MaybeDefault Style -> MaybeDefault Style -> MaybeDefault Style
+combineStyles (SetTo a) (SetTo b) = SetTo $ a .|. b
+combineStyles _ (SetTo v) = SetTo v
+combineStyles (SetTo v) _ = SetTo v
+combineStyles _ v = v
 
 -- | Insert a set of attribute mappings to an attribute map.
 applyAttrMappings :: [(AttrName, Attr)] -> AttrMap -> AttrMap

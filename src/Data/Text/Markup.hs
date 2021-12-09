@@ -12,15 +12,12 @@ module Data.Text.Markup
   , fromList
   , fromText
   , toText
+  , isEmpty
   , (@@)
   )
 where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-import Data.Monoid
-#endif
-
+import qualified Data.Semigroup as Sem
 import Data.String (IsString(..))
 import qualified Data.Text as T
 
@@ -28,10 +25,12 @@ import qualified Data.Text as T
 data Markup a = Markup [(Char, a)]
               deriving Show
 
+instance Sem.Semigroup (Markup a) where
+    (Markup t1) <> (Markup t2) = Markup (t1 `mappend` t2)
+
 instance Monoid (Markup a) where
     mempty = Markup mempty
-    mappend (Markup t1) (Markup t2) =
-        Markup (t1 `mappend` t2)
+    mappend = (Sem.<>)
 
 instance (Monoid a) => IsString (Markup a) where
     fromString = fromText . T.pack
@@ -48,6 +47,10 @@ fromText = (@@ mempty)
 -- | Extract the text from markup, discarding the markup metadata.
 toText :: (Eq a) => Markup a -> T.Text
 toText = T.concat . (fst <$>) . concat . markupToList
+
+-- | Test whether the markup is empty.
+isEmpty :: Markup a -> Bool
+isEmpty (Markup ls) = null ls
 
 -- | Set the metadata for a range of character positions in a piece of
 -- markup. This is useful for, e.g., syntax highlighting.

@@ -1,12 +1,14 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Main where
 
-import Control.Applicative ((<$>))
 import Lens.Micro ((^.), (&), (.~), (%~))
 import Lens.Micro.TH (makeLenses)
 import Control.Monad (void)
+#if !(MIN_VERSION_base(4,11,0))
 import Data.Monoid ((<>))
+#endif
 import qualified Graphics.Vty as V
 
 import qualified Brick.Types as T
@@ -90,8 +92,8 @@ appEvent st (T.MouseDown n _ _ loc) = do
     let T.Location pos = loc
     M.continue $ st & lastReportedClick .~ Just (n, loc)
                     & edit %~ E.applyEdit (if n == TextBox then moveCursor (swap pos) else id)
-appEvent st (T.MouseUp _ _ _) = M.continue $ st & lastReportedClick .~ Nothing
-appEvent st (T.VtyEvent (V.EvMouseUp _ _ _)) = M.continue $ st & lastReportedClick .~ Nothing
+appEvent st (T.MouseUp {}) = M.continue $ st & lastReportedClick .~ Nothing
+appEvent st (T.VtyEvent (V.EvMouseUp {})) = M.continue $ st & lastReportedClick .~ Nothing
 appEvent st (T.VtyEvent (V.EvKey V.KUp [V.MCtrl])) = M.vScrollBy (M.viewportScroll Prose) (-1) >> M.continue st
 appEvent st (T.VtyEvent (V.EvKey V.KDown [V.MCtrl])) = M.vScrollBy (M.viewportScroll Prose) 1 >> M.continue st
 appEvent st (T.VtyEvent (V.EvKey V.KEsc [])) = M.halt st
@@ -123,24 +125,26 @@ main = do
           V.setMode (V.outputIface v) V.Mouse True
           return v
 
-    void $ M.customMain buildVty Nothing app $ St [] Nothing
-           "Press Ctrl-up and Ctrl-down arrow keys to scroll, ESC to quit.\n\
-           \Observe the click coordinates identify the\n\
-           \underlying widget coordinates.\n\
-           \\n\
-           \Lorem ipsum dolor sit amet,\n\
-           \consectetur adipiscing elit,\n\
-           \sed do eiusmod tempor incididunt ut labore\n\
-           \et dolore magna aliqua.\n\
-           \ \n\
-           \Ut enim ad minim veniam\n\
-           \quis nostrud exercitation ullamco laboris\n\
-           \nisi ut aliquip ex ea commodo consequat.\n\
-           \\n\
-           \Duis aute irure dolor in reprehenderit\n\
-           \in voluptate velit esse cillum dolore eu fugiat nulla pariatur.\n\
-           \\n\
-           \Excepteur sint occaecat cupidatat not proident,\n\
-           \sunt in culpa qui officia deserunt mollit\n\
-           \anim id est laborum.\n"
+    initialVty <- buildVty
+    void $ M.customMain initialVty buildVty Nothing app $ St [] Nothing
+           (unlines [ "Try clicking on various UI elements."
+                    , "Observe that the click coordinates identify the"
+                    , "underlying widget coordinates."
+                    , ""
+                    , "Lorem ipsum dolor sit amet,"
+                    , "consectetur adipiscing elit,"
+                    , "sed do eiusmod tempor incididunt ut labore"
+                    , "et dolore magna aliqua."
+                    , ""
+                    , "Ut enim ad minim veniam"
+                    , "quis nostrud exercitation ullamco laboris"
+                    , "isi ut aliquip ex ea commodo consequat."
+                    , ""
+                    , "Duis aute irure dolor in reprehenderit"
+                    , "in voluptate velit esse cillum dolore eu fugiat nulla pariatur."
+                    , ""
+                    , "Excepteur sint occaecat cupidatat not proident,"
+                    , "sunt in culpa qui officia deserunt mollit"
+                    , "anim id est laborum."
+                    ])
            (E.editor TextBox Nothing "")

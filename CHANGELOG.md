@@ -2,6 +2,725 @@
 Brick changelog
 ---------------
 
+0.65
+----
+
+New features and API changes:
+ * Viewports got support for built-in scroll bar rendering. This
+   includes additions of types and functions to manage the feature
+   behavior. These changes enable viewports to automatically get
+   scroll bars drawn next to them (on any side) with customizable
+   attributes and drawings. As part of this change, a new demo program,
+   `ViewportScrollbarsDemo.hs`, was added to show off these new
+   features. Here are the new types and functions that got added (mostly
+   to `Brick.Widgets.Core`):
+   * `withVScrollBars` - enable display of vertical scroll bars
+   * `withHScrollBars` - enable display of horizontal scroll bars
+   * `withClickableVScrollBars` - enable mouse click reporting on
+     vertical scroll bar elements
+   * `withClickableHScrollBars` - enable mouse click reporting on
+     horizontal scroll bar elements
+   * `ClickableScrollbarElement` - the type of elements of a scroll bar
+     that can be clicked on and provided to the application
+   * `withVScrollBarHandles` - enable vertical scroll bar handle drawing
+   * `withHScrollBarHandles` - enable horizontal scroll bar handle
+     drawing
+   * `withVScrollBarRenderer` - customize the renderer used for vertical
+     scroll bars
+   * `withHScrollBarRenderer` - customize the renderer used for
+     horizontal scroll bars
+   * `ScrollbarRenderer(..)` - the type of scroll bar renderer
+     implementations
+   * `verticalScrollbarRenderer` - the default renderer for vertical
+     scrollbars, customizable with `withVScrollBarRenderer`
+   * `horizontalScrollbarRenderer` - the default renderer for horizontal
+     scrollbars, customizable with `withHScrollBarRenderer`
+   * `scrollbarAttr` - the base attribute of scroll bars
+   * `scrollbarTroughAttr` - the attribute of scroll bar troughs
+   * `scrollbarHandleAttr` - the attribute of scroll bar handles
+
+Package changes:
+ * Raised `base` bounds to allow building with GHC 9.2.1 (thanks Mario
+   Lang)
+ * Stopped supporting GHC 7.10.
+
+0.64.2
+------
+
+Bug fixes:
+ * `Brick.Themes.saveTheme` now correctly saves background colors (#338)
+ * `Brick.Widgets.List.listMoveToEnd` now uses the correct destination
+   index (#337)
+
+0.64.1
+------
+
+Bug fixes:
+ * Fixed a bug where mouse clicks could fail to be noticed if
+   "continueWithoutRedraw" was called.
+
+0.64
+----
+
+API changes:
+ * Added `Brick.Main.continueWithoutRedraw`, an alternative to
+   `Brick.Main.continue` that does not trigger a screen redraw. See the
+   Haddock and User Guide for details.
+ * Added `Brick.Widgets.Core.putCursor` to support Vty's new (as of
+   5.33) API for placing cursors without visually representing
+   them. This change also updated `Brick.Forms.renderCheckbox` and
+   `Brick.Forms.renderRadio` to use `putCursor` (thanks to Mario Lang
+   for this work).
+
+Other improvements:
+ * `Brick.Widgets.Edit` now supports a few more Emacs-style keybindings
+   (thanks Mario Lang):
+    * `M-b` and `M-f` to navigate by word
+    * `C-b` and `C-f` for consistency
+    * `M-d` to delete word under cursor
+    * `C-t` to transpose previous character with current character
+    * `M-<` and `M->` to goto-beginning-of-file and end of file,
+      respectively
+
+0.63
+----
+
+API changes:
+ * The `Viewport` type got a new field, `_vpContentSize` (and a
+   corresponding lens `vpContentSize`) to get the size of the viewport's
+   contents.
+
+0.62
+----
+
+API changes:
+ * `Brick.Widgets.Core` got new functions
+   `crop{Left,Right,Bottom,Top}To`. Unlike the `crop...By` functions,
+   which crop on the specified side by a particular amount, these
+   `crop...To` functions crop on the specified side and take a desired
+   overall width of the final result and use that to determine how much
+   to crop. A widget `x` of width `w` could thus be cropped equivalently
+   with `cropLeftBy a x` and `cropLeftTo (w - a) x`.
+
+Other changes:
+ * Added `programs/CroppingDemo.hs` to demonstrate the new (and
+   preexisting) cropping functions.
+
+0.61
+----
+
+API changes:
+ * Brick.Forms got `editShowableFieldWithValidate`, a generalization
+   of `editShowableField` that allows the caller to specify an
+   additional validation function (thanks Ben Selfridge)
+
+0.60.2
+------
+
+Bug fixes:
+ * Widgets reported as `clickable` are now reported as clickable even
+   when their renderings are cached with `cached` (#307; thanks Hari
+   Menon)
+
+0.60.1
+------
+
+Bug fixes:
+ * `table []` no longer raises `TEUnequalRowSizes`.
+
+0.60
+----
+
+New features:
+ * Added `Brick.Widgets.Table` to support drawing basic tables. See
+   `programs/TableDemo.hs` for a demonstration (`cabal new-run -f demos
+   brick-table-demo`).
+
+0.59
+----
+
+API changes:
+ * `Brick.Widgets.List` got `listMoveToBeginning` and `listMoveToEnd`
+   functions
+ * `Extent`: removed the unused `extentOffset` field
+
+Bug fixes:
+ * Fixed a crash in the border rewriting code that attempted to rewrite
+   empty images (#305) (thanks @dmwit)
+
+0.58.1
+------
+
+Bug fixes:
+ * Removed a defunct failing test from the List test suite
+
+0.58
+----
+
+Package changes:
+ * Updated dependency constraints to build on GHC 9.0.1 (thanks Ondřej
+   Súkup)
+
+API changes:
+ * The FileBrowser module now exports individual functions for
+   each of the events that it handles. This allows end users to
+   trigger the behaviors directly rather than relying on the built-in
+   `handleFileBrowserEvent` function. The documentation has been updated
+   to indicate which functions are triggered by each key event. (Thanks
+   David B. Lamkins)
+
+Other changes:
+ * The `List` module's `listFindBy` function now attempts to find a
+   match anywhere in the list rather than just somewhere between the
+   cursor and the end of the list.
+ * The `FileBrowser` now positions a cursor at the beginning of the
+   selected entry when the file browser is focused. (thanks Mario Lang)
+ * The user guide's viewport visibility example got an important
+   syntactic fix. (thanks Mario Lang)
+
+0.57.1
+------
+
+Bug fixes:
+ * Fixed a small space leak in the main rendering loop (#260)
+ * Get `TailDemo` building on more versions of GHC
+
+0.57
+----
+
+Package changes:
+ * Raised lower bound on `vty` to 5.31 to get the new `strikethrough`
+   style.
+
+New features:
+ * Added support for the `strikethrough` style in Brick theme
+   customization files.
+
+0.56
+----
+
+Package changes:
+ * Increased upper bound for `base` to support GHC 8.10.2 (thanks Ryan
+   Scott)
+
+API changes:
+ * Added `Brick.Forms.updateFormState` to update the state contained
+   within (and managed by) a Form. This function takes care of the
+   details of updating the form fields themselves to be consistent with
+   the change in underlying state.
+ * Added the overall window width (`windowWidth`) and height
+   (`windowHeight`) to `Context`, the rendering context type (thanks Tom
+   McLaughlin)
+
+Other changes:
+ * Added `brick-tail-demo`, a demonstration program for writing a
+   `tail`-style output-following interface.
+ * Updated `Brick.Widgets.ProgressBar` so that it handles near-endpoint
+   cases more naturally (fixes #281)
+
+0.55
+----
+
+Package changes:
+ * Increased lower bound on `vty` dependency to 5.29.
+
+Bug fixes:
+ * `customMain` now restores the initial terminal input state on
+   shutdown. This means that changes to the input state flags in the last
+   `suspendAndResume` before program exit are no longer propagated to the
+   end user's terminal environment (which could lead to broken or garbled
+   terminal I/O).
+
+0.54
+----
+
+API changes:
+ * Exported `Brick.Widgets.FileBrowser.maybeSelectCurrentEntry` (thanks
+   Róman Joost)
+
+Other changes:
+ * Added handlers for the `Home` and `End` keys to
+   `Brick.Widgets.Edit.handleEditorEvent` (thanks Róman Joost)
+
+0.53
+----
+
+Package changes:
+ * Relaxed base bounds to allow building with GHC 8.10 (thanks Joshua
+   Chia)
+
+Bug fixes:
+ * `vLimitPercent`: use correct horizontal size policy from child
+   (thanks Janek Spaderna)
+ * `str`: be more aggressive in determining how many characters to
+   display (attempt to display as many zero-width characters as
+   possible)
+
+0.52.1
+------
+
+Bug fixes:
+ * Attribute map lookups now merge styles in addition to merging colors
+   (see `eb857e6bb176e119ac76f5e2af475f1b49812088`).
+ * `txtWrapWith` now pads in the single-line case (see also
+   `926d317c46b19d4e576748891a1702080287aa03`, #234, and #263)
+
+0.52
+----
+
+API changes:
+ * EventM now provides a MonadFail instance
+ * EventM now provides MonadMask, MonadCatch, and MonadThrow instances
+   (thanks Fraser Tweedale)
+
+Other changes:
+ * The FileBrowser now has support for vi-style bindings in addition to
+   its previous bindings. New bindings include:
+   * `j`/`k`: next/previous element
+   * `C-n`/`C-p`: page down/up
+   * `C-d`/`C-u`: half page down/up
+   * `g`: select first entry
+   * `G`: select last entry
+
+0.51
+----
+
+API changes:
+ * Added Brick.Focus.focusRingToList, which returns all of the elements
+   in a focus ring as a list, starting with the focused entry and
+   wrapping around (#257; thanks @4eUeP)
+
+Bug fixes:
+ * Fix Brick.Widgets.FileBrowser.fileExtensionMatch to match directories
+   and also match symlinks that link to directories (thanks @YVee1)
+
+Other changes:
+ * Added demonstration program screenshot gallery (thanks @drola)
+
+0.50.1
+------
+
+Bug fixes:
+ * Fixed a bug where a self-referential symlink would cause the file
+   browser to get into a loop and ultimately crash. (Thanks Kevin Quick)
+
+API changes:
+ * Added `Brick.Focus.focusRingLength` to get the size of a focus ring.
+   (Thanks Róman Joost)
+
+Other changes:
+ * Updated Travis configuration and base dependency to support GHC
+   8.8.1. (thanks Brandon Hamilton)
+
+0.50
+----
+
+API changes:
+ * Added `writeBChanNonBlocking`, which does a non-blocking write to a
+   `BChan` and returns whether the write succeeded. This required
+   raising the STM lower bound to 2.4.3.
+
+0.49
+----
+
+New features:
+ * The `FileBrowser` now supports navigation of directories via
+   symlinks, so `Enter` on a symlink will descend into the target path
+   of the symlink if that path is a directory. Part of this change is
+   that the `FileInfo` type got a new file, `fileInfoLinkTargetType`,
+   that indicates the type of file that the link points to, if any.
+
+0.48
+----
+
+New features:
+ * The `Edit` widget now supports `EvPaste` Vty events by default,
+   assuming UTF-8 encoding of pasted bytes. If pasted bytes are not
+   UTF-8-decodable, the pastes will be ignored. In any case, users can
+   still intercept `EvPaste` events as before and handle them as desired
+   if the default behavior is not desirable.
+
+Other changes:
+ * `txtWrapWith` now always pads its output to the available width to
+   obey its `Greedy` requirement.
+
+0.47.1
+------
+
+Bug fixes:
+ * userguide: update stale Result construction
+ * Added test case for List initial selection (thanks Fraser Tweedale)
+ * Fixed build on GHC 7.10 due to RULES pragma formatting issue (thanks
+   Fraser Tweedale)
+ * Various CI-related fixes (thanks Fraser Tweedale)
+
+0.47
+----
+
+API changes:
+ * Changed `Brick.Main.customMain` so that it now takes an additional
+   (first) argument: the initial `Vty` handle to use. This lets the
+   caller have more control over the terminal state when, for example,
+   they have previously set up Vty to do other work before calling
+   `customMain`.
+ * Added `Brick.Main.customMainWithVty`. This function is the same as
+   `customMain` except that it also returns the final `Vty` handle that
+   it used internally *without* shutting that Vty handle down. This
+   allows the caller to continue using the terminal without resetting it
+   after `customMainWithVty` finishes executing.
+
+0.46
+----
+
+Performance improvements:
+ * The box combinators `<=>`, `<+>`, `vBox`, and `hBox` got GHC rewrite
+   rules that will optimize away redundant boxes. This change improves
+   performance for chains of `<+>` or `<=>` as well as nested boxes
+   using `hBox` and `vBox`. Previously chains of e.g. `<+>` produced
+   binary trees of boxes that incurred more rendering overhead. Those
+   are now optimized away.
+
+API changes:
+ * Data.Text.Markup: renamed `empty` to `isEmpty`
+
+0.45
+----
+
+API changes:
+ * List got a new `listFindBy` function (thanks Fraser Tweedale). This
+   function uses a predicate to find a matching element in the list and
+   move the cursor to that item.
+ * Data.Text.Markup got a new `empty` function (#213)
+
+0.44.1
+------
+
+Bug fixes:
+ * `Brick.Markup` now properly renders empty lines in markup (#209)
+
+0.44
+----
+
+API changes:
+ * The `List` type got its container type generalized thanks to a lot of
+   work by Fraser Tweedale. Note that this change is
+   backwards-compatible with older Brick programs that use the `List`.
+   Thanks to this work, the `List` now supports both `Data.Vector`
+   and `Data.Sequence` as its container types out of the box and can
+   be extended to support other sequence types with some simple type
+   class instances. In addition, property tests are provided for `List`
+   and its asymptotics are noted in the documentation. Along the way,
+   various bugs in some of the list movement functions got fixed to
+   bring them in line with the advertised behavior in the documentation.
+   Thanks, Fraser!
+
+0.43
+----
+
+API changes:
+ * The FileBrowser module got the ability to select multiple files
+   (#204). This means that the `fileBrowserSelection` function now
+   returns a list of `FileInfo` rather than at most one via `Maybe`.
+   The module also now uses a new attribute, `fileBrowserSelectedAttr`,
+   to indicate entries that are currently selected (in addition to
+   displaying an asterisk after their filenames). Lastly, the file
+   size and type fields of `FileInfo` have been replaced with a
+   new type, `FileStatus`, and `FileInfo` now carries an `Either
+   IOException FileStatus`. As part of that safety improvement,
+   `setWorkingDirectory` now no longer clobbers the entire entry listing
+   if any of the listings fail to stat. In addition, the FileBrowser now
+   uses the correct file stat routines to deal with symbolic links.
+
+Package changes:
+ * Added lower bound on `directory` (thanks Fraser Tweedale)
+
+Test suite changes:
+ * Test suite now propagates success/failure to exit status (thanks
+   Fraser Tweedale)
+
+0.42.1
+------
+
+Behavior changes:
+ * File browsers in search mode now terminate search mode when `Enter`
+   is pressed, resulting in better behavior.
+
+0.42
+----
+
+New features:
+ * Added `Brick.Widgets.FileBrowser`, which provides a filesystem
+   browser for selecting files and directories. Read the Haddock
+   module documentation and see the included demo program,
+   `programs/FileBrowserDemo.hs`, for information on using the new
+   functionality.
+
+0.41.5
+------
+
+Miscellaneous:
+ * `suspendAndResume` now empties the rendering cache when returning to
+   the rendering event loop. This ensures that the state returned by the
+   `IO` action is rendered completely rather than relying on potentially
+   stale cache entries.
+
+0.41.4
+------
+
+API changes:
+ * Forms: added `setFormFocus` function to set focus for a form
+ * Added `NFData` instances for `AttrMap` and `Theme` types (thanks
+   Fraser Tweedale)
+
+0.41.3
+------
+
+Bug fixes:
+ * Lists now draw correctly without crashing due to a vector slice
+   bounds check failure if their rendering area is too small (#195;
+   thanks @andrevdm)
+
+Other changes:
+ * Relaxed base bounds to support GHC 8.6 (thanks @maoe)
+ * Added towerHanoi to the featured projects list
+
+0.41.2
+------
+
+Bug fixes:
+ * Support STM 2.5 by allowing for `Natural` argument to `newTBQueue`
+   (thanks @osa1)
+
+0.41.1
+------
+
+New features:
+ * `Forms`: added `checkboxCustomField` and `radioCustomField` to permit
+   customization of characters used to draw selection state for such
+   fields.
+
+0.41
+----
+
+New features:
+ * `Brick.Forms` got a new field constructor, `listField`, that provides
+   a form field using a `List`.
+ * `List`: added the `listMoveToElement` function for changing the list
+   selection to the specified element, if it exists.
+
+Package changes:
+ * Now depends on vty >= 5.24.
+
+Other changes:
+ * `viewport`: fixed failable patterns for forward compatibility with
+   GHC 8.6 (#183)
+ * Add `Generic`, `NFData`, and `Read` instances for some types
+
+0.40
+----
+
+New features:
+ * Brick.Widgets.Core: added new functions `hLimitPercent` and
+   `vLimitPercent`. These behave similarly to `hLimit` and `vLimit`
+   except that instead of taking absolute numbers of columns or rows,
+   they take percentages. (Thanks Roman Joost)
+
+0.39
+----
+
+New features:
+ * The `italic` keyword is now supported in theme customization file
+   style lists. This requires `vty >= 5.23.1`
+
+0.38
+----
+
+New features:
+ * Added support for parsing `#RRGGBB` color values in theme
+   customization files in addition to the color names already supported
+   (thanks Brent Carmer). These values are mapped to the nearest
+   reasonable entry in the 240-color space.
+
+0.37.2
+------
+
+Bug fixes:
+ * Theme customization files can now use empty lists for style
+   customization.
+
+0.37.1
+------
+
+API changes:
+ * Exposed `Brick.Forms.renderFormFieldState`.
+
+0.37
+----
+
+Behavior changes:
+ * `listMoveBy` now automatically moves to the first or last position
+   in the list if called when the list is non-empty but has no selected
+   element (thanks Philip Kamenarsky)
+
+API changes:
+ * Added `Brick.Widgets.List.renderListWithIndex` that passes
+   the index of each element to the item rendering function (thanks
+   liam@magicseaweed.com)
+
+0.36.3
+------
+
+Bug fixes:
+ * Fixed a bug where mouse-up events in viewports were not translated
+   into the global coordinate space, unlike mouse-down events (#173)
+
+0.36.2
+------
+
+API changes:
+ * The Forms API got two new functions, `setFormConcat` and
+   `setFieldConcat`, used for controlling the previously hard-coded
+   concatenation behavior of form fields. These are optional and both
+   concatenation settings default to their former hard-coded values,
+   `vBox` (#172).
+
+0.36.1
+------
+
+Package changes:
+ * Raised upper bound to support GHC 8.4.2 (#171)
+
+Other changes:
+ * Improved List accessor documentation (thanks liam <liam@magicseaweed.com>)
+ * Brick.Main now uses a Set instead a list to track invalidation
+   requests to avoid duplicates.
+
+0.36
+----
+
+New features:
+ * Dynamic border support: adjacent widgets that use borders can make
+   those borders seamlessly connect to each other! Thanks
+   so much to Daniel Wagner for this feature! Please see
+   `programs/DynamicBorderDemo.hs` for a demonstration. Also see the
+   "Joinable Borders" section of the User Guide.
+
+0.35.1
+------
+
+ * Conditionally depend on semigroups for GHC before 8
+
+0.35
+----
+
+ * Added support for GHC 8.4.
+ * Updated travis build to test on all 8.x releases (thanks Peter
+   Simons)
+
+0.34.1
+------
+
+Bug fixes:
+ * Fixed a bug where the "reverseVideo" style could not be parsed in a
+   theme customization when it was all lowercase (thanks Yuriy Lazarev)
+
+Documentation changes:
+ * Guide: added more complete example of creating a default theme
+   (thanks Mark Wales)
+ * Guide: added offset to Extent pattern matching (thanks Mark Wales)
+
+0.34
+----
+
+API changes:
+ * Core: vLimit and hLimit now *bound* sizes rather than setting them.
+   This was the original intention of these combinators. The change in
+   behavior means that now `vLimit N` means that *at most* `N` rows will
+   be available; if the context has less, then the smaller constraint in
+   the context is used instead. Programs affected by this behavior will
+   be those that assume that `vLimit` doesn't do this, but that should
+   be very few or zero.
+
+Other changes:
+ * Dialog: now arrow keys no longer wrap around available buttons but
+   stop at rightmost or leftmost button to avoid confusion when
+   attempting to tell which button is selected in two-button dialogs
+   (thanks to Karl Ostmo for this change)
+
+Documentation changes:
+ * Updated Haddocks for str/txt in Core to mention tab character
+   considerations
+
+0.33
+----
+
+API changes:
+ * Forms: added support for external validation of form fields using
+   `setFieldValid`. See the Haddock, User Guide, and FormDemo.hs for
+   details.
+ * Borders: removed all attribute names except `borderAttr` to simplify
+   border attribute assignment.
+
+0.32.1
+------
+
+Bug fixes:
+ * Core: make all text wrap widgets Greedy horizontally
+
+Miscellaneous:
+ * Dialog: clarify purpose in documentation (w.r.t. #149)
+
+0.32
+----
+
+API changes:
+ * This release adds the new `Brick.Forms` module, which provides an API
+   for type-safe input forms with automatic rendering, event handling,
+   and state management! See the Haddock and the "Input Forms" section
+   of the Brick User Guide for information on this killer feature! Many
+   thanks to Kevin Quick for feedback on this new functionality.
+
+0.31
+----
+
+Behavior changes:
+ * `viewport` now implicitly causes generation of mouse events for the
+   viewport when mouse mode is enabled. The mouse events are expressed
+   in the coordinate system of the contents of the viewport. The
+   consequence and intention of this change is to enable mouse event
+   reporting for editors when clicks occur outside the known text area.
+
+0.30
+----
+
+API changes:
+ * `Brick.Focus`: added `focusSetCurrent` to make it easy to set the
+    focus of a focus ring
+ * `Brick.Main`: added a simple polymorphic `App` value, `simpleApp`
+
+0.29.1
+------
+
+Bug fixes:
+ * Mixed-case color names like "brightBlue" can now be parsed in theme
+   customization files.
+
+0.29
+----
+
+API changes:
+ * Added Ord instances for `Location` and `BrickEvent` (thanks Tom
+   Sydney Kerckhove)
+ * `Brick.AttrMap`: attribute name components are now exposed via the
+   `attrNameComponents` function. Also added a Read instance for
+   AttrName.
+
+New features:
+ * This release adds user-customizable theme support. Please see the
+   "Attribute Themes" section of the User Guide for an introduction; see
+   the Haddock documentation for `Brick.Themes` for full details. Also,
+   see the new `programs/ThemeDemo.hs` for a working demonstration.
+
 0.28
 ----
 

@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE CPP #-}
 -- | This module provides a basic text editor widget. You'll need to
 -- embed an 'Editor' in your application state and transform it with
 -- 'handleEditorEvent' when relevant events arrive. To get the contents
@@ -35,16 +36,23 @@ module Brick.Widgets.Edit
   -- * Attributes
   , editAttr
   , editFocusedAttr
+  -- * UTF-8 decoding of editor pastes
+  , DecodeUtf8(..)
   )
 where
 
+#if !(MIN_VERSION_base(4,11,0))
 import Data.Monoid
+#endif
 import Lens.Micro
 import Graphics.Vty (Event(..), Key(..), Modifier(..))
 
+import qualified Data.ByteString as BS
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.Zipper as Z hiding ( textZipper )
 import qualified Data.Text.Zipper.Generic as Z
+import qualified Data.Text.Zipper.Generic.Words as Z
 
 import Brick.Types
 import Brick.Widgets.Core
@@ -52,14 +60,24 @@ import Brick.AttrMap
 
 -- | Editor state.  Editors support the following events by default:
 --
--- * Ctrl-a: go to beginning of line
--- * Ctrl-e: go to end of line
+-- * Meta-<: go to beginning of file
+-- * Meta->: go to end of file
+-- * Ctrl-a, Home: go to beginning of line
+-- * Ctrl-e, End: go to end of line
 -- * Ctrl-d, Del: delete character at cursor position
+-- * Meta-d: delete word at cursor position
 -- * Backspace: delete character prior to cursor position
 -- * Ctrl-k: delete all from cursor to end of line
 -- * Ctrl-u: delete all from cursor to beginning of line
+-- * Ctrl-t: transpose character before cursor with the one at cursor position
+-- * Meta-b: move one word to the left
+-- * Ctrl-b: move one character to the left
+-- * Meta-f: move one word to the right
+-- * Ctrl-f: move one character to the right
 -- * Arrow keys: move cursor
 -- * Enter: break the current line at the cursor position
+-- * Paste: Bracketed Pastes from the terminal will be pasted, provided
+--   the incoming data is UTF-8-encoded.
 data Editor t n =
     Editor { editContents :: Z.TextZipper t
            -- ^ The contents of the editor
@@ -80,12 +98,33 @@ instance (Show t, Show n) => Show (Editor t n) where
 instance Named (Editor t n) n where
     getName = editorName
 
-handleEditorEvent :: (Eq t, Monoid t) => Event -> Editor t n -> EventM n (Editor t n)
+-- | Values that can be constructed by decoding bytestrings in UTF-8
+-- encoding.
+class DecodeUtf8 t where
+    -- | Decode a bytestring assumed to be text in UTF-8 encoding. If
+    -- the decoding fails, return 'Left'. This must not raise
+    -- exceptions.
+    decodeUtf8 :: BS.ByteString -> Either String t
+
+instance DecodeUtf8 T.Text where
+    decodeUtf8 bs = case T.decodeUtf8' bs of
+        Left e -> Left $ show e
+        Right t -> Right t
+
+instance DecodeUtf8 String where
+    decodeUtf8 bs = T.unpack <$> decodeUtf8 bs
+
+handleEditorEvent :: (DecodeUtf8 t, Eq t, Z.GenericTextZipper t)
+                  => Event -> Editor t n -> EventM n (Editor t n)
 handleEditorEvent e ed =
         let f = case e of
+                  EvPaste bs -> case decodeUtf8 bs of
+                      Left _ -> id
+                      Right t -> Z.insertMany t
                   EvKey (KChar 'a') [MCtrl] -> Z.gotoBOL
                   EvKey (KChar 'e') [MCtrl] -> Z.gotoEOL
                   EvKey (KChar 'd') [MCtrl] -> Z.deleteChar
+                  EvKey (KChar 'd') [MMeta] -> Z.deleteWord
                   EvKey (KChar 'k') [MCtrl] -> Z.killToEOL
                   EvKey (KChar 'u') [MCtrl] -> Z.killToBOL
                   EvKey KEnter [] -> Z.breakLine
@@ -95,7 +134,16 @@ handleEditorEvent e ed =
                   EvKey KDown [] -> Z.moveDown
                   EvKey KLeft [] -> Z.moveLeft
                   EvKey KRight [] -> Z.moveRight
+                  EvKey (KChar 'b') [MCtrl] -> Z.moveLeft
+                  EvKey (KChar 'f') [MCtrl] -> Z.moveRight
+                  EvKey (KChar 'b') [MMeta] -> Z.moveWordLeft
+                  EvKey (KChar 'f') [MMeta] -> Z.moveWordRight
                   EvKey KBS [] -> Z.deletePrevChar
+                  EvKey (KChar 't') [MCtrl] -> Z.transposeChars
+                  EvKey KHome [] -> Z.gotoBOL
+                  EvKey KEnd [] -> Z.gotoEOL
+                  EvKey (KChar '<') [MMeta] -> Z.gotoBOF
+                  EvKey (KChar '>') [MMeta] -> Z.gotoEOF
                   _ -> id
         in return $ applyEdit f ed
 
@@ -170,7 +218,6 @@ renderEditor draw foc e =
     in withAttr (if foc then editFocusedAttr else editAttr) $
        limit $
        viewport (e^.editorNameL) Both $
-       clickable (e^.editorNameL) $
        (if foc then showCursor (e^.editorNameL) cursorLoc else id) $
        visibleRegion cursorLoc (atCharWidth, 1) $
        draw $

@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module Brick.Types.Internal
   ( ScrollRequest(..)
   , VisibilityRequest(..)
@@ -17,14 +19,47 @@ module Brick.Types.Internal
   , CursorLocation(..)
   , cursorLocationL
   , cursorLocationNameL
+  , cursorLocationVisibleL
+  , VScrollBarOrientation(..)
+  , HScrollBarOrientation(..)
+  , ScrollbarRenderer(..)
+  , ClickableScrollbarElement(..)
   , Context(..)
+  , ctxAttrMapL
+  , ctxAttrNameL
+  , ctxBorderStyleL
+  , ctxDynBordersL
+  , ctxVScrollBarOrientationL
+  , ctxVScrollBarRendererL
+  , ctxHScrollBarOrientationL
+  , ctxHScrollBarRendererL
+  , ctxVScrollBarShowHandlesL
+  , ctxHScrollBarShowHandlesL
+  , ctxVScrollBarClickableConstrL
+  , ctxHScrollBarClickableConstrL
+  , availWidthL
+  , availHeightL
+  , windowWidthL
+  , windowHeightL
+
+  , Size(..)
+
   , EventState(..)
   , EventRO(..)
   , Next(..)
   , Result(..)
   , Extent(..)
+  , Edges(..)
+  , eTopL, eBottomL, eRightL, eLeftL
+  , BorderSegment(..)
+  , bsAcceptL, bsOfferL, bsDrawL
+  , DynBorder(..)
+  , dbStyleL, dbAttrL, dbSegmentsL
   , CacheInvalidateRequest(..)
   , BrickEvent(..)
+  , RenderM
+  , getContext
+  , Widget(..)
 
   , rsScrollRequestsL
   , viewportMapL
@@ -34,25 +69,29 @@ module Brick.Types.Internal
   , vpSize
   , vpLeft
   , vpTop
+  , vpContentSize
   , imageL
   , cursorsL
   , extentsL
+  , bordersL
   , visibilityRequestsL
   , emptyResult
   )
 where
 
-#if !MIN_VERSION_base(4,8,0)
-import Data.Monoid
-#endif
-
+import Control.Monad.Trans.Reader
+import Control.Monad.Trans.State.Lazy
 import Lens.Micro (_1, _2, Lens')
 import Lens.Micro.TH (makeLenses)
-import Lens.Micro.Internal (Field1, Field2)
 import qualified Data.Set as S
 import qualified Data.Map as M
-import Graphics.Vty (Vty, Event, Button, Modifier, DisplayRegion, Image, emptyImage)
+import Graphics.Vty (Vty, Event, Button, Modifier, DisplayRegion, Image, Attr, emptyImage)
+import GHC.Generics
+import Control.DeepSeq (NFData)
 
+import Brick.BorderMap (BorderMap)
+import qualified Brick.BorderMap as BM
+import Brick.Types.Common
 import Brick.Types.TH
 import Brick.AttrMap (AttrName, AttrMap)
 import Brick.Widgets.Border.Style (BorderStyle)
@@ -67,12 +106,90 @@ data ScrollRequest = HScrollBy Int
                    | VScrollToEnd
                    | SetTop Int
                    | SetLeft Int
+                   deriving (Read, Show, Generic, NFData)
+
+-- | Widget size policies. These policies communicate how a widget uses
+-- space when being rendered. These policies influence rendering order
+-- and space allocation in the box layout algorithm for 'hBox' and
+-- 'vBox'.
+data Size = Fixed
+          -- ^ Widgets advertising this size policy should take up the
+          -- same amount of space no matter how much they are given,
+          -- i.e. their size depends on their contents alone rather than
+          -- on the size of the rendering area.
+          | Greedy
+          -- ^ Widgets advertising this size policy must take up all the
+          -- space they are given.
+          deriving (Show, Eq, Ord)
+
+-- | The type of widgets.
+data Widget n =
+    Widget { hSize :: Size
+           -- ^ This widget's horizontal growth policy
+           , vSize :: Size
+           -- ^ This widget's vertical growth policy
+           , render :: RenderM n (Result n)
+           -- ^ This widget's rendering function
+           }
+
+data RenderState n =
+    RS { viewportMap :: !(M.Map n Viewport)
+       , rsScrollRequests :: ![(n, ScrollRequest)]
+       , observedNames :: !(S.Set n)
+       , renderCache :: !(M.Map n ([n], Result n))
+       , clickableNames :: ![n]
+       } deriving (Read, Show, Generic, NFData)
+
+-- | The type of the rendering monad. This monad is used by the
+-- library's rendering routines to manage rendering state and
+-- communicate rendering parameters to widgets' rendering functions.
+type RenderM n a = ReaderT (Context n) (State (RenderState n)) a
+
+-- | Get the current rendering context.
+getContext :: RenderM n (Context n)
+getContext = ask
+
+-- | Orientations for vertical scroll bars.
+data VScrollBarOrientation = OnLeft | OnRight
+                           deriving (Show, Eq)
+
+-- | Orientations for horizontal scroll bars.
+data HScrollBarOrientation = OnBottom | OnTop
+                           deriving (Show, Eq)
+
+-- | A scroll bar renderer.
+data ScrollbarRenderer n =
+    ScrollbarRenderer { renderScrollbar :: Widget n
+                      -- ^ How to render the body of the scroll bar.
+                      -- This should provide a widget that expands in
+                      -- whatever direction(s) this renderer will be
+                      -- used for. So, for example, if this was used to
+                      -- render vertical scroll bars, this widget would
+                      -- need to be one that expands vertically such as
+                      -- @fill@. The same goes for the trough widget.
+                      , renderScrollbarTrough :: Widget n
+                      -- ^ How to render the "trough" of the scroll bar
+                      -- (the area to either side of the scroll bar
+                      -- body). This should expand as described in the
+                      -- documentation for the scroll bar field.
+                      , renderScrollbarHandleBefore :: Widget n
+                      -- ^ How to render the handle that appears at the
+                      -- top or left of the scrollbar. The result should
+                      -- be at most one row high for horizontal handles
+                      -- and one column wide for vertical handles.
+                      , renderScrollbarHandleAfter :: Widget n
+                      -- ^ How to render the handle that appears at
+                      -- the bottom or right of the scrollbar. The
+                      -- result should be at most one row high for
+                      -- horizontal handles and one column wide for
+                      -- vertical handles.
+                      }
 
 data VisibilityRequest =
     VR { vrPosition :: Location
        , vrSize :: DisplayRegion
        }
-       deriving (Show, Eq)
+       deriving (Show, Eq, Read, Generic, NFData)
 
 -- | Describes the state of a viewport as it appears as its most recent
 -- rendering.
@@ -83,8 +200,10 @@ data Viewport =
        -- ^ The row offset of the top of the viewport.
        , _vpSize :: DisplayRegion
        -- ^ The size of the viewport.
+       , _vpContentSize :: DisplayRegion
+       -- ^ The size of the contents of the viewport.
        }
-       deriving Show
+       deriving (Show, Read, Generic, NFData)
 
 -- | The type of viewports that indicates the direction(s) in which a
 -- viewport is scrollable.
@@ -96,28 +215,25 @@ data ViewportType = Vertical
                   -- ^ Viewports of this type are scrollable vertically and horizontally.
                   deriving (Show, Eq)
 
-data CacheInvalidateRequest n = InvalidateSingle n
-                              | InvalidateEntire
+data CacheInvalidateRequest n =
+    InvalidateSingle n
+    | InvalidateEntire
+    deriving (Ord, Eq)
 
 data EventState n = ES { esScrollRequests :: [(n, ScrollRequest)]
-                       , cacheInvalidateRequests :: [CacheInvalidateRequest n]
+                       , cacheInvalidateRequests :: S.Set (CacheInvalidateRequest n)
                        }
 
 -- | An extent of a named area: its size, location, and origin.
 data Extent n = Extent { extentName      :: n
                        , extentUpperLeft :: Location
                        , extentSize      :: (Int, Int)
-                       , extentOffset    :: Location
                        }
-              deriving (Show)
-
-data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
-                         , eventVtyHandle :: Vty
-                         , latestExtents :: [Extent n]
-                         }
+                       deriving (Show, Read, Generic, NFData)
 
 -- | The type of actions to take upon completion of an event handler.
 data Next a = Continue a
+            | ContinueWithoutRedraw a
             | SuspendAndResume (IO a)
             | Halt a
             deriving Functor
@@ -127,21 +243,7 @@ data Direction = Up
                -- ^ Up/left
                | Down
                -- ^ Down/right
-               deriving (Show, Eq)
-
--- | A terminal screen location.
-data Location = Location { loc :: (Int, Int)
-                         -- ^ (Column, Row)
-                         }
-                deriving (Show, Eq, Ord)
-
-suffixLenses ''Location
-
-instance Field1 Location Location Int Int where
-    _1 = locL._1
-
-instance Field2 Location Location Int Int where
-    _2 = locL._2
+               deriving (Show, Eq, Read, Generic, NFData)
 
 -- | The class of types that behave like terminal locations.
 class TerminalLocation a where
@@ -159,22 +261,42 @@ instance TerminalLocation Location where
     locationRowL = _2
     locationRow (Location t) = snd t
 
--- | The origin (upper-left corner).
-origin :: Location
-origin = Location (0, 0)
-
-instance Monoid Location where
-    mempty = origin
-    mappend (Location (w1, h1)) (Location (w2, h2)) = Location (w1+w2, h1+h2)
-
 -- | A cursor location.  These are returned by the rendering process.
 data CursorLocation n =
     CursorLocation { cursorLocation :: !Location
                    -- ^ The location
                    , cursorLocationName :: !(Maybe n)
                    -- ^ The name of the widget associated with the location
+                   , cursorLocationVisible :: !Bool
+                   -- ^ Whether the cursor should actually be visible
                    }
-                   deriving Show
+                   deriving (Read, Show, Generic, NFData)
+
+-- | A border character has four segments, one extending in each direction
+-- (horizontally and vertically) from the center of the character.
+data BorderSegment = BorderSegment
+    { bsAccept :: Bool
+    -- ^ Would this segment be willing to be drawn if a neighbor wanted to
+    -- connect to it?
+    , bsOffer :: Bool
+    -- ^ Does this segment want to connect to its neighbor?
+    , bsDraw :: Bool
+    -- ^ Should this segment be represented visually?
+    } deriving (Eq, Ord, Read, Show, Generic, NFData)
+
+-- | Information about how to redraw a dynamic border character when it abuts
+-- another dynamic border character.
+data DynBorder = DynBorder
+    { dbStyle :: BorderStyle
+    -- ^ The 'Char's to use when redrawing the border. Also used to filter
+    -- connections: only dynamic borders with equal 'BorderStyle's will connect
+    -- to each other.
+    , dbAttr :: Attr
+    -- ^ What 'Attr' to use to redraw the border character. Also used to filter
+    -- connections: only dynamic borders with equal 'Attr's will connect to
+    -- each other.
+    , dbSegments :: Edges BorderSegment
+    } deriving (Eq, Read, Show, Generic, NFData)
 
 -- | The type of result returned by a widget's rendering function. The
 -- result provides the image, cursor positions, and visibility requests
@@ -189,13 +311,26 @@ data Result n =
            -- ^ The list of visibility requests made by widgets rendered
            -- while rendering this one (used by viewports)
            , extents :: [Extent n]
+           -- Programmer's note: we don't try to maintain the invariant that
+           -- the size of the borders closely matches the size of the 'image'
+           -- field. Most widgets don't need to care about borders, and so they
+           -- use the empty 'BorderMap' that has a degenerate rectangle. Only
+           -- border-drawing widgets and the hbox/vbox stuff try to set this
+           -- carefully. Even then, in the boxes, we only make sure that the
+           -- 'BorderMap' is no larger than the entire concatenation of boxes,
+           -- and it's certainly possible for it to be smaller. (Resizing
+           -- 'BorderMap's is lossy, so we try to do it as little as possible.)
+           -- If you're writing a widget, this should make it easier for you to
+           -- do so; but beware this lack of invariant if you are consuming
+           -- widgets.
+           , borders :: BorderMap DynBorder
+           -- ^ Places where we may rewrite the edge of the image when
+           -- placing this widget next to another one.
            }
-           deriving Show
-
-suffixLenses ''Result
+           deriving (Show, Read, Generic, NFData)
 
 emptyResult :: Result n
-emptyResult = Result emptyImage [] [] []
+emptyResult = Result emptyImage [] [] [] BM.empty
 
 -- | The type of events.
 data BrickEvent n e = VtyEvent Event
@@ -212,28 +347,54 @@ data BrickEvent n e = VtyEvent Event
                     -- the clicked widget (see 'clickable').
                     deriving (Show, Eq, Ord)
 
-data RenderState n =
-    RS { viewportMap :: M.Map n Viewport
-       , rsScrollRequests :: [(n, ScrollRequest)]
-       , observedNames :: !(S.Set n)
-       , renderCache :: M.Map n (Result n)
-       , clickableNames :: [n]
-       }
+data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
+                         , eventVtyHandle :: Vty
+                         , latestExtents :: [Extent n]
+                         , oldState :: RenderState n
+                         }
+
+-- | Clickable elements of a scroll bar.
+data ClickableScrollbarElement =
+    SBHandleBefore
+    -- ^ The handle at the beginning (left/top) of the scroll bar.
+    | SBHandleAfter
+    -- ^ The handle at the end (right/bottom) of the scroll bar.
+    | SBBar
+    -- ^ The scroll bar itself.
+    | SBTroughBefore
+    -- ^ The trough before the scroll bar.
+    | SBTroughAfter
+    -- ^ The trough after the scroll bar.
+    deriving (Eq, Show, Ord)
 
 -- | The rendering context. This tells widgets how to render: how much
 -- space they have in which to render, which attribute they should use
 -- to render, which bordering style should be used, and the attribute map
 -- available for rendering.
-data Context =
+data Context n =
     Context { ctxAttrName :: AttrName
             , availWidth :: Int
             , availHeight :: Int
+            , windowWidth :: Int
+            , windowHeight :: Int
             , ctxBorderStyle :: BorderStyle
             , ctxAttrMap :: AttrMap
+            , ctxDynBorders :: Bool
+            , ctxVScrollBarOrientation :: Maybe VScrollBarOrientation
+            , ctxVScrollBarRenderer :: Maybe (ScrollbarRenderer n)
+            , ctxHScrollBarOrientation :: Maybe HScrollBarOrientation
+            , ctxHScrollBarRenderer :: Maybe (ScrollbarRenderer n)
+            , ctxVScrollBarShowHandles :: Bool
+            , ctxHScrollBarShowHandles :: Bool
+            , ctxVScrollBarClickableConstr :: Maybe (ClickableScrollbarElement -> n -> n)
+            , ctxHScrollBarClickableConstr :: Maybe (ClickableScrollbarElement -> n -> n)
             }
-            deriving Show
 
 suffixLenses ''RenderState
 suffixLenses ''VisibilityRequest
 suffixLenses ''CursorLocation
+suffixLenses ''Context
+suffixLenses ''DynBorder
+suffixLenses ''Result
+suffixLenses ''BorderSegment
 makeLenses ''Viewport

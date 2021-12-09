@@ -18,67 +18,35 @@ module Brick.Widgets.Border
   -- * Drawing single border elements
   , borderElem
 
-  -- * Border attribute names
+  -- * Attribute names
   , borderAttr
-  , vBorderAttr
-  , hBorderAttr
-  , hBorderLabelAttr
-  , tlCornerAttr
-  , trCornerAttr
-  , blCornerAttr
-  , brCornerAttr
+
+  -- * Utility
+  , joinableBorder
   )
 where
 
-import Data.Monoid ((<>))
-
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#endif
-
-import Lens.Micro ((^.), to)
+import Lens.Micro ((^.), (&), (.~), to)
 import Graphics.Vty (imageHeight, imageWidth)
 
 import Brick.AttrMap
 import Brick.Types
 import Brick.Widgets.Core
-import Brick.Widgets.Center (hCenterWith)
 import Brick.Widgets.Border.Style (BorderStyle(..))
+import Brick.Widgets.Internal (renderDynBorder)
+import Data.IMap (Run(..))
+import qualified Brick.BorderMap as BM
 
 -- | The top-level border attribute name.
 borderAttr :: AttrName
 borderAttr = "border"
 
--- | The vertical border attribute name.
-vBorderAttr :: AttrName
-vBorderAttr = borderAttr <> "vertical"
-
--- | The horizontal border attribute name.
-hBorderAttr :: AttrName
-hBorderAttr = borderAttr <> "horizontal"
-
--- | The attribute used for horizontal border labels.
-hBorderLabelAttr :: AttrName
-hBorderLabelAttr = hBorderAttr <> "label"
-
--- | The attribute used for border box top-left corners.
-tlCornerAttr :: AttrName
-tlCornerAttr = borderAttr <> "corner" <> "tl"
-
--- | The attribute used for border box top-right corners.
-trCornerAttr :: AttrName
-trCornerAttr = borderAttr <> "corner" <> "tr"
-
--- | The attribute used for border box bottom-left corners.
-blCornerAttr :: AttrName
-blCornerAttr = borderAttr <> "corner" <> "bl"
-
--- | The attribute used for border box bottom-right corners.
-brCornerAttr :: AttrName
-brCornerAttr = borderAttr <> "corner" <> "br"
-
 -- | Draw the specified border element using the active border style
 -- using 'borderAttr'.
+--
+-- Does not participate in dynamic borders (due to the difficulty of
+-- introspecting on the first argument); consider using 'joinableBorder'
+-- instead.
 borderElem :: (BorderStyle -> Char) -> Widget n
 borderElem f =
     Widget Fixed Fixed $ do
@@ -108,19 +76,18 @@ borderWithLabel label = border_ (Just label)
 border_ :: Maybe (Widget n) -> Widget n -> Widget n
 border_ label wrapped =
     Widget (hSize wrapped) (vSize wrapped) $ do
-      bs <- ctxBorderStyle <$> getContext
       c <- getContext
 
       middleResult <- render $ hLimit (c^.availWidthL - 2)
                              $ vLimit (c^.availHeightL - 2)
                              $ wrapped
 
-      let top = (withAttr tlCornerAttr $ str [bsCornerTL bs])
-                <+> hBorder_ label <+>
-                (withAttr trCornerAttr $ str [bsCornerTR bs])
-          bottom = (withAttr blCornerAttr $ str [bsCornerBL bs])
-                   <+> hBorder <+>
-                   (withAttr brCornerAttr $ str [bsCornerBR bs])
+      let tl = joinableBorder (Edges False True False True)
+          tr = joinableBorder (Edges False True True False)
+          bl = joinableBorder (Edges True False False True)
+          br = joinableBorder (Edges True False True False)
+          top = tl <+> maybe hBorder hBorderWithLabel label <+> tr
+          bottom = bl <+> hBorder <+> br
           middle = vBorder <+> (Widget Fixed Fixed $ return middleResult) <+> vBorder
           total = top <=> middle <=> bottom
 
@@ -130,25 +97,70 @@ border_ label wrapped =
 
 -- | A horizontal border.  Fills all horizontal space.
 hBorder :: Widget n
-hBorder = hBorder_ Nothing
+hBorder =
+    withAttr borderAttr $ Widget Greedy Fixed $ do
+      ctx <- getContext
+      let bs = ctxBorderStyle ctx
+          w = availWidth ctx
+      db <- dynBorderFromDirections (Edges False False True True)
+      let dynBorders = BM.insertH mempty (Run w db)
+                     $ BM.emptyCoordinates (Edges 0 0 0 (w-1))
+      setDynBorders dynBorders $ render $ vLimit 1 $ fill (bsHorizontal bs)
 
 -- | A horizontal border with a label placed in the center of the
 -- border. Fills all horizontal space.
 hBorderWithLabel :: Widget n
                  -- ^ The label widget
                  -> Widget n
-hBorderWithLabel label = hBorder_ (Just label)
-
-hBorder_ :: Maybe (Widget n) -> Widget n
-hBorder_ label =
+hBorderWithLabel label =
     Widget Greedy Fixed $ do
-      bs <- ctxBorderStyle <$> getContext
-      let msg = maybe (str [bsHorizontal bs]) (withAttr hBorderLabelAttr) label
-      render $ vLimit 1 $ withAttr hBorderAttr $ hCenterWith (Just $ bsHorizontal bs) msg
+      res <- render $ vLimit 1 label
+      render $ hBox [hBorder, Widget Fixed Fixed (return res), hBorder]
 
 -- | A vertical border.  Fills all vertical space.
 vBorder :: Widget n
 vBorder =
-    Widget Fixed Greedy $ do
-      bs <- ctxBorderStyle <$> getContext
-      render $ hLimit 1 $ withAttr vBorderAttr $ fill (bsVertical bs)
+    withAttr borderAttr $ Widget Fixed Greedy $ do
+      ctx <- getContext
+      let bs = ctxBorderStyle ctx
+          h = availHeight ctx
+      db <- dynBorderFromDirections (Edges True True False False)
+      let dynBorders = BM.insertV mempty (Run h db)
+                     $ BM.emptyCoordinates (Edges 0 (h-1) 0 0)
+      setDynBorders dynBorders $ render $ hLimit 1 $ fill (bsVertical bs)
+
+-- | Initialize a 'DynBorder'. It will be 'bsDraw'n and 'bsOffer'ing
+-- in the given directions to begin with, and accept join offers from
+-- all directions. We consult the context to choose the 'dbStyle' and
+-- 'dbAttr'.
+--
+-- This is likely to be useful only for custom widgets that need more
+-- complicated dynamic border behavior than 'border', 'vBorder', or
+-- 'hBorder' offer.
+dynBorderFromDirections :: Edges Bool -> RenderM n DynBorder
+dynBorderFromDirections dirs = do
+    ctx <- getContext
+    return DynBorder
+        { dbStyle = ctxBorderStyle ctx
+        , dbAttr = attrMapLookup (ctxAttrName ctx) (ctxAttrMap ctx)
+        , dbSegments = (\draw -> BorderSegment True draw draw) <$> dirs
+        }
+
+-- | Replace the 'Result'\'s dynamic borders with the given one,
+-- provided the context says to use dynamic borders at all.
+setDynBorders :: BM.BorderMap DynBorder -> RenderM n (Result n) -> RenderM n (Result n)
+setDynBorders newBorders act = do
+    dyn <- ctxDynBorders <$> getContext
+    res <- act
+    return $ if dyn
+        then res & bordersL .~ newBorders
+        else res
+
+-- | A single-character dynamic border that will react to neighboring
+-- borders, initially connecting in the given directions.
+joinableBorder :: Edges Bool -> Widget n
+joinableBorder dirs = withAttr borderAttr . Widget Fixed Fixed $ do
+    db <- dynBorderFromDirections dirs
+    setDynBorders
+        (BM.singleton mempty db)
+        (render (raw (renderDynBorder db)))

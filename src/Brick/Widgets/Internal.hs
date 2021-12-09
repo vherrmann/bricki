@@ -3,12 +3,9 @@ module Brick.Widgets.Internal
   ( renderFinal
   , cropToContext
   , cropResultToContext
+  , renderDynBorder
   )
 where
-
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif
 
 import Lens.Micro ((^.), (&), (%~))
 import Control.Monad.Trans.State.Lazy
@@ -20,6 +17,8 @@ import Brick.Types
 import Brick.Types.Internal
 import Brick.AttrMap
 import Brick.Widgets.Border.Style
+import Brick.BorderMap (BorderMap)
+import qualified Brick.BorderMap as BM
 
 renderFinal :: AttrMap
             -> [Widget n]
@@ -27,16 +26,36 @@ renderFinal :: AttrMap
             -> ([CursorLocation n] -> Maybe (CursorLocation n))
             -> RenderState n
             -> (RenderState n, V.Picture, Maybe (CursorLocation n), [Extent n])
-renderFinal aMap layerRenders sz chooseCursor rs = (newRS, picWithBg, theCursor, concat layerExtents)
+renderFinal aMap layerRenders (w, h) chooseCursor rs =
+    (newRS, picWithBg, theCursor, concat layerExtents)
     where
         (layerResults, !newRS) = flip runState rs $ sequence $
             (\p -> runReaderT p ctx) <$>
             (render <$> cropToContext <$> layerRenders)
-        ctx = Context mempty (fst sz) (snd sz) defaultBorderStyle aMap
-        pic = V.picForLayers $ uncurry V.resize sz <$> (^.imageL) <$> layerResults
+
+        ctx = Context { ctxAttrName = mempty
+                      , availWidth = w
+                      , availHeight = h
+                      , windowWidth = w
+                      , windowHeight = h
+                      , ctxBorderStyle = defaultBorderStyle
+                      , ctxAttrMap = aMap
+                      , ctxDynBorders = False
+                      , ctxVScrollBarOrientation = Nothing
+                      , ctxVScrollBarRenderer = Nothing
+                      , ctxHScrollBarOrientation = Nothing
+                      , ctxHScrollBarRenderer = Nothing
+                      , ctxHScrollBarShowHandles = False
+                      , ctxVScrollBarShowHandles = False
+                      , ctxHScrollBarClickableConstr = Nothing
+                      , ctxVScrollBarClickableConstr = Nothing
+                      }
+        pic = V.picForLayers $ uncurry V.resize (w, h) <$> (^.imageL) <$> layerResults
+
         -- picWithBg is a workaround for runaway attributes.
         -- See https://github.com/coreyoconnor/vty/issues/95
         picWithBg = pic { V.picBackground = V.Background ' ' V.defAttr }
+
         layerCursors = (^.cursorsL) <$> layerResults
         layerExtents = reverse $ (^.extentsL) <$> layerResults
         theCursor = chooseCursor $ concat layerCursors
@@ -53,11 +72,12 @@ cropResultToContext result = do
     return $ result & imageL   %~ cropImage   c
                     & cursorsL %~ cropCursors c
                     & extentsL %~ cropExtents c
+                    & bordersL %~ cropBorders c
 
-cropImage :: Context -> V.Image -> V.Image
+cropImage :: Context n -> V.Image -> V.Image
 cropImage c = V.crop (max 0 $ c^.availWidthL) (max 0 $ c^.availHeightL)
 
-cropCursors :: Context -> [CursorLocation n] -> [CursorLocation n]
+cropCursors :: Context n -> [CursorLocation n] -> [CursorLocation n]
 cropCursors ctx cs = catMaybes $ cropCursor <$> cs
     where
         -- A cursor location is removed if it is not within the region
@@ -71,7 +91,7 @@ cropCursors ctx cs = catMaybes $ cropCursor <$> cs
                , c^.cursorLocationL.locationColumnL >= ctx^.availWidthL
                ]
 
-cropExtents :: Context -> [Extent n] -> [Extent n]
+cropExtents :: Context n -> [Extent n] -> [Extent n]
 cropExtents ctx es = catMaybes $ cropExtent <$> es
     where
         -- An extent is cropped in places where it is not within the
@@ -81,14 +101,10 @@ cropExtents ctx es = catMaybes $ cropExtent <$> es
         --
         -- Otherwise its size and upper left corner are adjusted so that
         -- they are contained within the context region.
-        cropExtent (Extent n (Location (c, r)) (w, h) (Location (oC, oR))) =
+        cropExtent (Extent n (Location (c, r)) (w, h)) =
             -- First, clamp the upper-left corner to at least (0, 0).
             let c' = max c 0
                 r' = max r 0
-                -- Compute deltas for the offset since if the upper-left
-                -- corner moved, so should the offset.
-                dc = c' - c
-                dr = r' - r
                 -- Then, determine the new lower-right corner based on
                 -- the clamped corner.
                 endCol = c' + w
@@ -101,7 +117,33 @@ cropExtents ctx es = catMaybes $ cropExtent <$> es
                 -- clamped lower-right corner.
                 w' = endCol' - c'
                 h' = endRow' - r'
-                e = Extent n (Location (c', r')) (w', h') (Location (oC + dc, oR + dr))
+                e = Extent n (Location (c', r')) (w', h')
             in if w' < 0 || h' < 0
                then Nothing
                else Just e
+
+cropBorders :: Context n -> BorderMap DynBorder -> BorderMap DynBorder
+cropBorders ctx = BM.crop Edges
+    { eTop = 0
+    , eBottom = availHeight ctx - 1
+    , eLeft = 0
+    , eRight = availWidth ctx - 1
+    }
+
+renderDynBorder :: DynBorder -> V.Image
+renderDynBorder db = V.char (dbAttr db) $ getBorderChar $ dbStyle db
+    where
+        getBorderChar = case bsDraw <$> dbSegments db of
+            --    top   bot   left  right
+            Edges False False False False -> const ' '
+            Edges False False _     _     -> bsHorizontal
+            Edges _     _     False False -> bsVertical
+            Edges False True  False True  -> bsCornerTL
+            Edges False True  True  False -> bsCornerTR
+            Edges True  False False True  -> bsCornerBL
+            Edges True  False True  False -> bsCornerBR
+            Edges False True  True  True  -> bsIntersectT
+            Edges True  False True  True  -> bsIntersectB
+            Edges True  True  False True  -> bsIntersectL
+            Edges True  True  True  False -> bsIntersectR
+            Edges True  True  True  True  -> bsIntersectFull

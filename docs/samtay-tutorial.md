@@ -24,7 +24,7 @@ reference in addition to the existing resources:
 1. [Demo programs](https://github.com/jtdaugherty/brick/tree/master/programs)
 (clone down to explore the code and run them locally)
 2. [User guide](https://github.com/jtdaugherty/brick/blob/master/docs/guide.rst)
-3. [Haddock docs](https://hackage.haskell.org/package/brick-0.18)
+3. [Haddock docs](https://hackage.haskell.org/package/brick)
 4. [Google group](https://groups.google.com/forum/#!forum/brick-users)
 
 ### The basic idea
@@ -83,6 +83,7 @@ and our dependencies to `test.cabal`
 executable snake
   hs-source-dirs:      src
   main-is:             Main.hs
+  ghc-options:         -threaded
   exposed-modules:     Snake
                      , UI
   default-language:    Haskell2010
@@ -289,7 +290,9 @@ main = do
     writeBChan chan Tick
     threadDelay 100000 -- decides how fast your game moves
   g <- initGame
-  void $ customMain (V.mkVty V.defaultConfig) (Just chan) app g
+  let buildVty = V.mkVty V.defaultConfig
+  initialVty <- buildVty
+  void $ customMain initialVty buildVty (Just chan) app g
 ```
 
 We do need to import `Vty.Graphics` since `customMain` allows us
@@ -383,8 +386,8 @@ folds over the binary `<=>` and `<+>` operations.
 
 The score is straightforward, but it is the first border in
 this tutorial. Borders are well documented in the [border
-demo](https://github.com/jtdaugherty/brick/blob/master/programs/BorderDe
-mo.hs) and the Haddocks for that matter.
+demo](https://github.com/jtdaugherty/brick/blob/master/programs/BorderDemo.hs)
+and the Haddocks for that matter.
 
 We also only show the "game over" widget if the game is actually over.
 In that case, we are rendering the string widget with the `gameOverAttr`
@@ -481,7 +484,9 @@ main = do
     writeBChan chan Tick
     int <- atomically $ readTVar tv
     threadDelay int
-  customMain (V.mkVty V.defaultConfig) (Just chan) app (initialGame tv)
+  let buildVty = V.mkVty V.defaultConfig
+  initialVty <- buildVty
+  customMain initialVty buildVty (Just chan) app (initialGame tv)
     >>= printResult
 ```
 

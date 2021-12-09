@@ -21,7 +21,7 @@ The process of writing an application using ``brick`` entails writing
 two important functions:
 
 - A *drawing function* that turns your application state into a
-  specification of how your interface should look, and
+  specification of how your interface should be drawn, and
 - An *event handler* that takes your application state and an input
   event and decides whether to change the state or quit the program.
 
@@ -50,8 +50,7 @@ To clone and build locally::
 
    $ git clone https://github.com/jtdaugherty/brick.git
    $ cd brick
-   $ cabal sandbox init
-   $ cabal install -j
+   $ cabal new-build
 
 Building the Demonstration Programs
 -----------------------------------
@@ -90,6 +89,12 @@ programs.
   not part of ``brick``. Use of qualified names is not intended to
   produce executable examples, but rather to guide you in writing your
   ``import`` statements.
+
+Compiling Brick Applications
+============================
+
+Brick applications must be compiled with the threaded RTS using the GHC
+``-threaded`` option.
 
 The App Type
 ============
@@ -216,11 +221,18 @@ type* and *event type* of your application, respectively, and must match
 the corresponding types in ``App`` and ``EventM``.
 
 The return value type ``Next s`` value describes what should happen
-after the event handler is finished. We have three choices:
+after the event handler is finished. We have four choices:
 
 * ``Brick.Main.continue s``: continue executing the event loop with the
   specified application state ``s`` as the next value. Commonly this is
   where you'd modify the state based on the event and return it.
+* ``Brick.Main.continueWithoutRedraw s``: continue executing the event
+  loop with the specified application state ``s`` as the next value, but
+  unlike ``continue``, do not redraw the screen using the new state.
+  This is a faster version of ``continue`` since it doesn't redraw the
+  screen; it just leaves up the previous screen contents. This function
+  is only useful when you know that your state change won't cause
+  anything on the screen to change. When in doubt, use ``continue``.
 * ``Brick.Main.halt s``: halt the event loop and return the final
   application state value ``s``. This state value is returned to the
   caller of ``defaultMain`` or ``customMain`` where it can be used prior
@@ -304,7 +316,7 @@ Using Your Own Event Type
 
 Since we often need to communicate application-specific events beyond
 Vty input events to the event handler, brick supports embedding your
-application's custom events in the stream of ``BrickEvent``s that
+application's custom events in the stream of ``BrickEvent``-s that
 your handler will receive. The type of these events is the type ``e``
 mentioned in ``BrickEvent n e`` and ``App s e n``.
 
@@ -322,13 +334,13 @@ define the counter event type:
 
 With this type declaration we can now use counter events in our app by
 using the application type ``App s CounterEvent n``. To handle these
-events we'll just need to look for ``AppEvent`` values in the event
+events we'll just need to check for ``AppEvent`` values in the event
 handler:
 
 .. code:: haskell
 
    myEvent :: s -> BrickEvent n CounterEvent -> EventM n (Next s)
-   myEvent s (AppEvent (CounterEvent i)) = ...
+   myEvent s (AppEvent (Counter i)) = ...
 
 The next step is to actually *generate* our custom events and
 inject them into the ``brick`` event stream so they make it to the
@@ -343,8 +355,9 @@ our events over that channel. Once we've created the channel with
    main :: IO ()
    main = do
        eventChan <- Brick.BChan.newBChan 10
-       finalState <- customMain
-                       (Graphics.Vty.mkVty Data.Default.defaultConfig)
+       let buildVty = Graphics.Vty.mkVty Graphics.Vty.defaultConfig
+       initialVty <- buildVty
+       finalState <- customMain initialVty buildVty
                        (Just eventChan) app initialState
        -- Use finalState and exit
 
@@ -378,8 +391,8 @@ bound for the event channel. In general, consider the performance of
 your event handler when choosing the channel capacity and design event
 producers so that they can block if the channel is full.
 
-Starting up: appStartEvent
-**************************
+appStartEvent: Starting up
+--------------------------
 
 When an application starts, it may be desirable to perform some of
 the duties typically only possible when an event has arrived, such as
@@ -441,7 +454,7 @@ selection easy in common cases:
   cursor position.
 
 For example, this widget requests a cursor placement on the first
-"``o``" in "``foo``" associated with the cursor name "``myCursor``":
+"``o``" in "``foo``" associated with the cursor name ``CustomName``:
 
 .. code:: haskell
 
@@ -457,7 +470,7 @@ resource name type ``n`` and would be able to pattern-match on
 .. code:: haskell
 
    myApp = App { ...
-               , appChooseCursor = showCursorNamed CustomName
+               , appChooseCursor = \_ -> showCursorNamed CustomName
                }
 
 See the next section for more information on using names.
@@ -527,7 +540,7 @@ viewport), a unique name is assigned in each use.
 appAttrMap: Managing Attributes
 -------------------------------
 
-In ``brick`` we use an *attribute map* to assign attibutes to elements
+In ``brick`` we use an *attribute map* to assign attributes to elements
 of the interface. Rather than specifying specific attributes when
 drawing a widget (e.g. red-on-black text) we specify an *attribute name*
 that is an abstract name for the kind of thing we are drawing, e.g.
@@ -614,7 +627,7 @@ A widget advertising a ``Fixed`` size in a given dimension is a widget
 that will always consume the same number of rows or columns no
 matter how many it is given. Widgets can advertise different
 vertical and horizontal growth policies for example, the
-``Brick.Widgets.Border.hCenter`` function centers a widget and is
+``Brick.Widgets.Center.hCenter`` function centers a widget and is
 ``Greedy`` horizontally and defers to the widget it centers for vertical
 growth behavior.
 
@@ -709,6 +722,25 @@ of ``unicode``:
    let w = withBorderStyle Brick.Widgets.Border.Style.ascii $
              Brick.Widgets.Border.border $ str "Hello, world!"
 
+By default, borders in adjacent widgets do not connect to each other.
+This can lead to visual oddities, for example, when horizontal borders
+are drawn next to vertical borders by leaving a small gap like this:
+
+.. code:: text
+
+    │─
+
+You can request that adjacent borders connect to each other with
+``Brick.Widgets.Core.joinBorders``. Two borders drawn with the
+same attribute and border style, and both under the influence of
+``joinBorders``, will produce a border like this instead:
+
+.. code:: text
+
+    ├─
+
+See `Joining Borders`_ for further details.
+
 How Attributes Work
 ===================
 
@@ -751,6 +783,96 @@ map combinators:
 * ``Brick.Widgets.Core.forceAttr``
 * ``Brick.Widgets.Core.withDefAttr``
 * ``Brick.Widgets.Core.overrideAttr``
+
+Attribute Themes
+================
+
+Brick provides support for customizable attribute themes. This works as
+follows:
+
+* The application provides a default theme built in to the program.
+* The application customizes the theme by loading theme customizations
+  from a user-specified customization file.
+* The application can save new customizations to files for later
+  re-loading.
+
+Customizations are written in an INI-style file. Here's an example:
+
+.. code:: ini
+
+   [default]
+   default.fg = blue
+   default.bg = black
+
+   [other]
+   someAttribute.fg = red
+   someAttribute.style = underline
+   otherAttribute.style = [underline, bold]
+   otherAttribute.inner.fg = white
+
+In the above example, the theme's *default attribute* -- the one that is
+used when no other attributes are used -- is customized. Its foreground
+and background colors are set. Then, other attributes specified by
+the theme -- ``someAttribute`` and ``otherAttribute`` -- are also
+customized. This example shows that styles can be customized, too, and
+that a custom style can either be a single style (in this example,
+``underline``) or a collection of styles to be applied simultaneously
+(in this example, ``underline`` and ``bold``). Lastly, the hierarchical
+attribute name ``otherAttribute.inner`` refers to an attribute name
+with two components, ``otherAttribute <> inner``, similar to the
+``specificAttr`` attribute described in `How Attributes Work`_. Full
+documentation for the format of theme customization files can be found
+in the module documentation for ``Brick.Themes``.
+
+The above example can be used in a ``brick`` application as follows.
+First, the application provides a default theme:
+
+.. code:: haskell
+
+   import Brick.Themes (Theme, newTheme)
+   import Brick (attrName)
+   import Brick.Util (fg, on)
+   import Graphics.Vty (defAttr, white, blue, yellow, magenta)
+
+   defaultTheme :: Theme
+   defaultTheme =
+       newTheme (white `on` blue)
+                [ (attrName "someAttribute",  fg yellow)
+                , (attrName "otherAttribute", fg magenta)
+                ]
+
+Notice that the attributes in the theme have defaults: ``someAttribute``
+will default to a yellow foreground color if it is not customized. (And
+its background will default to the theme's default background color,
+blue, if it not customized either.) Then, the application can customize
+the theme with the user's customization file:
+
+.. code:: haskell
+
+   import Brick.Themes (loadCustomizations)
+
+   main :: IO ()
+   main = do
+       customizedTheme <- loadCustomizations "custom.ini" defaultTheme
+
+Now we have a customized theme based on ``defaultTheme``. The next step
+is to build an ``AttrMap`` from the theme:
+
+.. code:: haskell
+
+   import Brick.Themes (themeToAttrMap)
+
+   main :: IO ()
+   main = do
+       customizedTheme <- loadCustomizations "custom.ini" defaultTheme
+       let mapping = themeToAttrMap customizedTheme
+
+The resulting ``AttrMap`` can then be returned by ``appAttrMap``
+as described in `How Attributes Work`_ and `appAttrMap: Managing
+Attributes`_.
+
+If the theme is further customized at runtime, any changes can be saved
+with ``Brick.Themes.saveCustomizations``.
 
 Wide Character Support and the TextWidth class
 ==============================================
@@ -824,25 +946,28 @@ in event handlers in ``EventM``:
 Paste Support
 =============
 
-Some terminal emulators support "bracketed paste" support. This feature
+Some terminal emulators support "bracketed paste" mode. This feature
 enables OS-level paste operations to send the pasted content as a
 single chunk of data and bypass the usual input processing that the
-application does. This enales more secure handling of pasted data since
-the application can detect that a pasted occurred and avoid processing
+application does. This enables more secure handling of pasted data since
+the application can detect that a paste occurred and avoid processing
 the pasted data as ordinary keyboard input. For more information, see
 `bracketed paste mode`_.
 
 The Vty library used by brick provides support for bracketed pastes, but
 this mode must be enabled. To enable paste mode, we need to get access
-to the Vty library handle in ``EventM``:
+to the Vty library handle in ``EventM`` (in e.g. ``appHandleEvent``):
 
 .. code:: haskell
 
+   import Control.Monad (when)
+   import qualified Graphics.Vty as V
+
    do
      vty <- Brick.Main.getVtyHandle
-     let output = outputIface vty
-     when (supportsMode output BracketedPaste) $
-         liftIO $ setMode output BracketedPaste True
+     let output = V.outputIface vty
+     when (V.supportsMode output V.BracketedPaste) $
+         liftIO $ V.setMode output V.BracketedPaste True
 
 Once enabled, paste mode will generate Vty ``EvPaste`` events. These
 events will give you the entire pasted content as a ``ByteString`` which
@@ -1087,7 +1212,7 @@ simply wrap it with ``visible``:
    -- Assuming that App uses 'Name' for its resource names:
    data Name = Viewport1
    let w = viewport Viewport1 Horizontal $
-           (visible $ str "Hello," <+> (str " world!")
+           (visible $ str "Hello,") <+> (str " world!")
 
 This example requests that the ``Viewport1`` viewport be scrolled so
 that "Hello," is visible. We could extend this example with a value
@@ -1107,6 +1232,29 @@ capture various cursor-based scenarios:
   its selected item visible regardless of its size, which makes
   the list widget scrolling-unaware.
 
+Showing Scroll Bars on Viewports
+--------------------------------
+
+Brick supports drawing both vertical and horizontal scroll bars on
+viewports. To enable scroll bars, wrap your call to ``viewport`` with
+a call to ``withVScrollBars`` and/or ``withHScrollBars``. If you don't
+like the appearance of the resulting scroll bars, you can customize
+how they are drawn by making your own ``ScrollbarRenderer`` and using
+``withVScrollBarRenderer`` and/or ``withHScrollBarRenderer``. Note that
+when you enable scrollbars, the content of your viewport will lose one
+column of available space if vertical scroll bars are enabled and one
+row of available space if horizontal scroll bars are enabled.
+
+Scroll bars can also be configured to draw "handles" with
+``withHScrollBarHandles`` and ``withVScrollBarHandles``.
+
+Lastly, scroll bars can be configured to report mouse events on
+each scroll bar element. To enable mouse click reporting, use
+``withClickableHScrollBars`` and ``withClickableVScrollBars``.
+
+For a demonstration of the scroll bar API in action, see the
+``ViewportScrollbarsDemo.hs`` demonstration program.
+
 Viewport Restrictions
 ---------------------
 
@@ -1120,6 +1268,436 @@ number for ``Greedy`` widgets would result in a widget that is too big
 and not scrollable in a useful way.
 
 Violating this restriction will result in a runtime exception.
+
+Input Forms
+===========
+
+While it's possible to construct interfaces with editors and other
+interactive inputs manually, this process is somewhat tedious: all of
+the event dispatching has to be written by hand, a focus ring or other
+construct needs to be managed, and most of the rendering code needs to
+be written. Furthermore, this process makes it difficult to follow some
+common patterns:
+
+* We typically want to validate the user's input, and only collect it
+  once it has been validated.
+* We typically want to notify the user when a particular field's
+  contents are invalid.
+* It is often helpful to be able to create a new data type to represent
+  the fields in an input interface, and use it to initialize the input
+  elements and later collect the (validated) results.
+* A lot of the rendering and event-handling work to be done is
+  repetitive.
+
+The ``Brick.Forms`` module provides a high-level API to automate all of
+the above work in a type-safe manner.
+
+A Form Example
+--------------
+
+Let's consider an example data type that we'd want to use as the
+basis for an input interface. This example comes directly from the
+``FormDemo.hs`` demonstration program.
+
+.. code:: haskell
+
+   data UserInfo =
+       FormState { _name      :: T.Text
+                 , _age       :: Int
+                 , _address   :: T.Text
+                 , _ridesBike :: Bool
+                 , _handed    :: Handedness
+                 , _password  :: T.Text
+                 } deriving (Show)
+
+   data Handedness = LeftHanded
+                   | RightHanded
+                   | Ambidextrous
+                   deriving (Show, Eq)
+
+Suppose we want to build an input form for the above data. We might want
+to use an editor to allow the user to enter a name and an age. We'll
+need to ensure that the user's input for age is a valid integer. For
+``_ridesBike`` we might want a checkbox-style input, and for ``_handed``
+we might want a radio button input. For ``_password``, we'd definitely
+like a password input box that conceals the input.
+
+If we were to build an interface for this data manually, we'd need to
+deal with converting the data above to the right types for inputs. For
+example, for ``_age`` we'd need to convert an initial age value to
+``Text``, put it in an editor with ``Brick.Widgets.Edit.editor``, and
+then at a later time, parse the value and reconstruct an age from the
+editor's contents. We'd also need to tell the user if the age value was
+invalid.
+
+Brick's ``Forms`` API provides input field types for all of the above
+use cases. Here's the form that we can use to allow the user to edit a
+``UserInfo`` value:
+
+.. code:: haskell
+
+   mkForm :: UserInfo -> Form UserInfo e Name
+   mkForm =
+       newForm [ editTextField name NameField (Just 1)
+               , editTextField address AddressField (Just 3)
+               , editShowableField age AgeField
+               , editPasswordField password PasswordField
+               , radioField handed [ (LeftHanded, LeftHandField, "Left")
+                                   , (RightHanded, RightHandField, "Right")
+                                   , (Ambidextrous, AmbiField, "Both")
+                                   ]
+               , checkboxField ridesBike BikeField "Do you ride a bicycle?"
+               ]
+
+A form is represented using a ``Form s e n`` value and is parameterized
+with some types:
+
+* ``s`` - the type of *form state* managed by the form (in this case
+  ``UserInfo``)
+* ``e`` - the event type of the application (must match the event type
+  used with ``App``)
+* ``n`` - the resource name type of the application (must match the
+  resource name type used with ``App``)
+
+First of all, the above code assumes we've derived lenses for
+``UserInfo`` using ``Lens.Micro.TH.makeLenses``. Once we've done
+that, each field that we specify in the form must provide a lens into
+``UserInfo`` so that we can declare the particular field of ``UserInfo``
+that will be edited by the field. For example, to edit the ``_name``
+field we use the ``name`` lens to create a text field editor with
+``editTextField``. All of the field constructors above are provided by
+``Brick.Forms``.
+
+Each form field also needs a resource name (see `Resource Names`_). The
+resource names are assigned to the individual form inputs so the form
+can automatically track input focus and handle mouse click events.
+
+The form carries with it the value of ``UserInfo`` that reflects the
+contents of the form. Whenever an input field in the form handles an
+event, its contents are validated and rewritten to the form state (in
+this case, a ``UserInfo`` record).
+
+The ``mkForm`` function takes a ``UserInfo`` value, which is really
+just an argument to ``newForm``. This ``UserInfo`` value will be used
+to initialize all of the form fields. Each form field will use the lens
+provided to extract the initial value from the ``UserInfo`` record,
+convert it into an appropriate state type for the field in question, and
+later validate that state and convert it back into the appropriate type
+for storage in ``UserInfo``.
+
+The form value itself -- of type ``Form`` -- must be stored in your
+application state. You should only ever call ``newForm`` when you need
+to initialize a totally new form. Once initialized, the form needs to be
+kept around and updated by event handlers in order to work.
+
+For example, if the initial ``UserInfo`` value's ``_age`` field has the
+value ``0``, the ``editShowableField`` will call ``show`` on ``0``,
+convert that to ``Text``, and initialize the editor for ``_age`` with
+the text string ``"0"``. Later, if the user enters more text -- changing
+the editor contents to ``"10"``, say -- the ``Read`` instance for
+``Int`` (the type of ``_age``) will be used to parse ``"10"``. The
+successfully-parsed value ``10`` will then be written to the ``_age``
+field of the form's ``UserInfo`` state using the ``age`` lens. The use
+of ``Show`` and ``Read`` here is a feature of the field type we have
+chosen for ``_age``, ``editShowableField``.
+
+For other field types we may have other needs. For instance,
+``Handedness`` is a data type representing all the possible choices
+we want to provide for a user's handedness. We wouldn't want the user
+to have to type in a text string for this option. A more appropriate
+input interface is a list of radio buttons to choose from amongst
+the available options. For that we have ``radioField``. This field
+constructor takes a list of all of the available options, and updates
+the form state with the value of the currently-selected option.
+
+Rendering Forms
+---------------
+
+Rendering forms is done easily using the ``Brick.Forms.renderForm``
+function. However, as written above, the form will not look especially
+nice. We'll see a few text editors followed by some radio buttons and a
+check box. But we'll need to customize the output a bit to make the form
+easier to use. For that, we have the ``Brick.Forms.@@=`` operator. This
+operator lets us provide a function to augment the ``Widget`` generated
+by the field's rendering function so we can do things like add labels,
+control layout, or change attributes:
+
+.. code:: haskell
+
+    (str "Name: " <+>) @@=
+      editTextField name NameField (Just 1)
+
+Now when we invoke ``renderForm`` on a form using the above example,
+we'll see a ``"Name:"`` label to the left of the editor field for
+the ``_name`` field of ``UserInfo``.
+
+Brick provides this interface to controlling per-field rendering because
+many form fields either won't have labels or will have different layout
+requirements, so an alternative API such as building the label into the
+field API doesn't always make sense.
+
+Brick defaults to rendering individual fields' inputs, and the entire
+form, in a vertical box using ``vBox``. Use ``setFormConcat`` and
+``setFieldConcat`` to change this behavior to, e.g., ``hBox``.
+
+Form Attributes
+---------------
+
+The ``Brick.Forms`` module uses and exports two attribute names (see
+`How Attributes Work`_):
+
+* ``focusedFormInputAttr`` - this attribute is used to render the form
+  field that has the focus.
+* ``invalidFormInputAttr`` - this attribute is used to render any form
+  field that has user input that has valid validation.
+
+Your application should set both of these. Some good mappings in the
+attribute map are:
+
+* ``focusedFormInputAttr`` - ``black `on` yellow``
+* ``invalidFormInputAttr`` - ``white `on` red``
+
+Handling Form Events
+--------------------
+
+Handling form events is easy: we just call
+``Brick.Forms.handleFormEvent`` with the ``BrickEvent`` and the
+``Form``. This automatically dispatches input events to the
+currently-focused input field, and it also manages focus changes with
+``Tab`` and ``Shift-Tab`` keybindings. (For details on all of its
+behaviors, see the Haddock documentation for ``handleFormEvent``.) It's
+still up to the application to decide when events should go to the form
+in the first place.
+
+Since the form field handlers take ``BrickEvent`` values, that means
+that custom fields could even handle application-specific events (of the
+type ``e`` above).
+
+Once the application has decided that the user should be done with the
+form editing session, the current state of the form can be obtained
+with ``Brick.Forms.formState``. In the example above, this would
+return a ``UserInfo`` record containing the values for each field in
+the form *as of the last time it was valid input*. This means that
+the user might have provided invalid input to a form field that is
+not reflected in the form state due to failing validation.
+
+Since the ``formState`` is always a valid set of values, it might
+be surprising to the user if the values used do not match the last
+values they saw on the screen; the ``Brick.Forms.allFieldsValid``
+can be used to determine if the last visual state of the form had
+any invalid entries and doesn't match the value of ``formState``. A
+list of any fields which had invalid values can be retrieved with the
+``Brick.Forms.invalidFields`` function.
+
+While each form field type provides a validator function to validate
+its current user input value, that function is pure. As a result it's
+not suitable for doing validation that requires I/O such as searching
+a database or making network requests. If your application requires
+that kind of validation, you can use the ``Brick.Forms.setFieldValid``
+function to set the validation state of any form field as you see
+fit. The validation state set by that function will be considered by
+``allFieldsValid`` and ``invalidFields``. See ``FormDemo.hs`` for an
+example of this API.
+
+Note that if mouse events are enabled in your application (see `Mouse
+Support`_), all built-in form fields will respond to mouse interaction.
+Radio buttons and check boxes change selection on mouse clicks and
+editors change cursor position on mouse clicks.
+
+Writing Custom Form Field Types
+-------------------------------
+
+If the built-in form field types don't meet your needs, ``Brick.Forms``
+exposes all of the data types needed to implement your own field types.
+For more details on how to do this, see the Haddock documentation for
+the ``FormFieldState`` and ``FormField`` data types along with the
+implementations of the built-in form field types.
+
+Joining Borders
+===============
+
+Brick supports a feature called "joinable borders" which means that
+borders drawn in adjacent widgets can be configured to automatically
+"join" with each other using the appropriate intersection characters.
+This feature is helpful for creating seamless connected borders without
+the need for manual calculations to determine where to draw intersection
+characters.
+
+Under normal circumstances, widgets are self-contained in that their
+renderings do not interact with the appearance of adjacent widgets. This
+is unfortunate for borders: one often wants to draw a T-shaped character
+at the intersection of a vertical and horizontal border, for example.
+To facilitate automatically adding such characters, ``brick`` offers
+some border-specific capabilities for widgets to re-render themselves
+as information about neighboring widgets becomes available during the
+rendering process.
+
+Border-joining works by iteratively *redrawing* the edges of widgets as
+those edges come into contact with other widgets during rendering. If
+the adjacent edge locations of two widgets both use joinable borders,
+the Brick will re-draw one of the characters to so that it connects
+seamlessly with the adjacent border.
+
+How Joining Works
+-----------------
+
+When a widget is rendered, it can report supplementary information
+about each position on its edges. Each position has four notional line
+segments extending from its center, arranged like this:
+
+.. code:: text
+
+            top
+             |
+             |
+    left ----+---- right
+             |
+             |
+           bottom
+
+These segments can independently be *drawn*, *accepting*, and
+*offering*, as captured in the ``Brick.Types.BorderSegment`` type:
+
+.. code:: haskell
+
+    data BorderSegment = BorderSegment
+        { bsAccept :: Bool
+        , bsOffer :: Bool
+        , bsDraw :: Bool
+        }
+
+If no information is reported for a position, it assumed that it is
+not drawn, not accepting, and not offering -- and so it will never
+be rewritten. This situation is the ordinary situation where an edge
+location is not a border at all, or is a border that we don't want to
+join to other borders.
+
+Line segments that are *drawn* are used for deciding which part of the
+``BorderStyle`` to use if this position needs to be updated. (See also
+`The Active Border Style`_.) For example, suppose a position needs to
+be redrawn, and already has the left and bottom segments drawn; then it
+will replace the current character with the upper-right corner drawing
+character ``bsCornerTR`` from its border style.
+
+The *accepting* and *offering* properties are used to perform a small
+handshake between neighboring widgets; when the handshake is successful,
+one segment will transition to being drawn. For example, suppose a
+horizontal and vertical border widget are drawn next to each other:
+
+.. code:: text
+
+            top
+         (offering)                 top
+             |
+             |
+    left     +     right    left ----+---- right
+             |           (offering)     (offering)
+             |
+           bottom                  bottom
+         (offering)
+
+These borders are accepting in all directions, drawn in the directions
+signified by visible lines, and offering in the directions written.
+Since the horizontal border on the right is offering towards the
+vertical border, and the vertical border is accepting from the direction
+towards the horizontal border, the right segment of the vertical
+border will transition to being drawn. This will trigger an update of
+the ``Image`` associated with the left widget, overwriting whatever
+character is there currently with a ``bsIntersectL`` character instead.
+The state of the segments afterwards will be the same, but the fact that
+there is one more segment drawn will be recorded:
+
+.. code:: text
+
+            top
+         (offering)                 top
+             |
+             |
+    left     +---- right    left ----+---- right
+             |           (offering)     (offering)
+             |
+           bottom                  bottom
+         (offering)
+
+It is important that this be recorded: we may later place this combined
+widget to the right of another horizontal border, in which case we
+would want to transition again from a ``bsIntersectL`` character to a
+``bsIntersectFull`` character that represents all four segments being
+drawn.
+
+Because this involves an interaction between multiple widgets, we
+may find that the two widgets involved were rendered under different
+rendering contexts. To avoid mixing and matching border styles and
+drawing attributes, each location records not just the state of its
+four segments but also the border style and attribute that were active
+at the time the border was drawn. This information is stored in
+``Brick.Types.DynBorder``.
+
+.. code:: haskell
+
+    data DynBorder = DynBorder
+        { dbStyle :: BorderStyle
+        , dbAttr :: Attr
+        , dbSegments :: Edges BorderSegment
+        }
+
+The ``Brick.Types.Edges`` type has one field for each direction:
+
+.. code:: haskell
+
+    data Edges a = Edges { eTop, eBottom, eLeft, eRight :: a }
+
+In addition to the offer/accept handshake described above, segments also
+check that their neighbor's ``BorderStyle`` and ``Attr`` match their own
+before transitioning from undrawn to drawn to avoid visual glitches from
+trying to connect e.g. ``unicode`` borders to ``ascii`` ones or green
+borders to red ones.
+
+The above description applies to a single location; any given widget's
+result may report information about any location on its border using the
+``Brick.BorderMap.BorderMap`` type. A ``BorderMap a`` is close kin to a
+``Data.Map.Map Location a`` except that each ``BorderMap`` has a fixed
+rectangle on which keys are retained. Values inserted at other keys are
+silently discarded.
+
+For backwards compatibility, all the widgets that ship with ``brick``
+avoid reporting any border information by default, but ``brick`` offers
+three ways of modifying the border-joining behavior of a widget.
+
+* ``Brick.Widgets.Core.joinBorders`` instructs any borders drawn in its
+  child widget to report their edge information. It does this
+  by setting a flag in the rendering context that tells the
+  ``Brick.Widgets.Border`` widgets to report the information described
+  above. Consequently, widgets drawn in this context will join their
+  borders with neighbors.
+* ``Brick.Widgets.Core.separateBorders`` does the opposite of
+  ``joinBorders`` by unsetting the same context flag, preventing border
+  widgets from attempting to connect.
+* ``Brick.Widgets.Core.freezeBorders`` lets its child widget connect its
+  borders internally but prevents it from connecting with anything
+  outside the ``freezeBorders`` call. It does this by deleting the edge
+  metadata about its child widget. This means that any connections
+  already made within the child widget will stay as they are but no new
+  connections will be made to adjacent widgets. For example, one might
+  use this to create a box with internal but no external connections:
+
+  .. code:: haskell
+
+      joinBorders . freezeBorders . border . hBox $
+          [str "left", vBorder, str "right"]
+
+  Or to create a box that allows external connections but not internal
+  ones:
+
+  .. code:: haskell
+
+      joinBorders . border . freezeBorders . hBox $
+          [str "left", vBorder, str "right"]
+
+When creating new widgets, if you would like ``joinBorders`` and
+``separateBorders`` to affect the behavior of your widget, you may do
+so by consulting the ``ctxDynBorders`` field of the rendering context
+before writing to your ``Result``'s ``borders`` field.
 
 The Rendering Cache
 ===================
@@ -1206,6 +1784,7 @@ function returns a ``Brick.Types.Result`` value:
                , cursors            :: [Brick.Types.CursorLocation n]
                , visibilityRequests :: [Brick.Types.VisibilityRequest]
                , extents            :: [Extent n]
+               , borders            :: BorderMap DynBorder
                }
 
 The rendering function runs in the ``RenderM`` monad, which gives us
@@ -1222,6 +1801,7 @@ attribute state of the renderer, among other things:
                 , availHeight    :: Int
                 , ctxBorderStyle :: BorderStyle
                 , ctxAttrMap     :: AttrMap
+                , ctxDynBorders  :: Bool
                 }
 
 and has lens fields exported as described in `Conventions`_.
@@ -1259,7 +1839,7 @@ write:
            ctx <- getContext
            let a = ctx^.attrL
            return $ Result (Graphics.Vty.charFill a ch (ctx^.availWidthL) (ctx^.availHeightL))
-                           [] []
+                           [] [] [] Brick.BorderMap.empty
 
 Rendering Sub-Widgets
 ---------------------
@@ -1296,7 +1876,7 @@ names but needs to render the sub-widget, it can use ``overrideAttr``
 or ``mapAttrNames`` to convert its custom names to the names that the
 sub-widget uses for rendering its output.
 
-.. _vty: https://github.com/coreyoconnor/vty
+.. _vty: https://github.com/jtdaugherty/vty
 .. _Hackage: http://hackage.haskell.org/
 .. _microlens: http://hackage.haskell.org/package/microlens
 .. _bracketed paste mode: https://cirw.in/blog/bracketed-paste

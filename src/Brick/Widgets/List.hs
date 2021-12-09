@@ -6,16 +6,27 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveGeneric #-}
 -- | This module provides a scrollable list type and functions for
 -- manipulating and rendering it.
+--
+-- Note that lenses are provided for direct manipulation purposes, but
+-- lenses are *not* safe and should be used with care. (For example,
+-- 'listElementsL' permits direct manipulation of the list container
+-- without performing bounds checking on the selected index.) If you
+-- need a safe API, consider one of the various functions for list
+-- manipulation. For example, instead of 'listElementsL', consider
+-- 'listReplace'.
 module Brick.Widgets.List
-  ( List(listElements, listSelected, listName, listItemHeight)
+  ( GenericList
+  , List
 
   -- * Constructing a list
   , list
 
   -- * Rendering a list
   , renderList
+  , renderListWithIndex
 
   -- * Handling events
   , handleListEvent
@@ -27,18 +38,28 @@ module Brick.Widgets.List
   , listNameL
   , listItemHeightL
 
+  -- * Accessors
+  , listElements
+  , listName
+  , listSelectedElement
+  , listSelected
+  , listItemHeight
+
   -- * Manipulating a list
   , listMoveBy
   , listMoveTo
+  , listMoveToElement
+  , listFindBy
   , listMoveUp
   , listMoveDown
   , listMoveByPages
   , listMovePageUp
   , listMovePageDown
+  , listMoveToBeginning
+  , listMoveToEnd
   , listInsert
   , listRemove
   , listReplace
-  , listSelectedElement
   , listClear
   , listReverse
   , listModify
@@ -47,20 +68,31 @@ module Brick.Widgets.List
   , listAttr
   , listSelectedAttr
   , listSelectedFocusedAttr
+
+  -- * Classes
+  , Splittable(..)
+  , Reversible(..)
   )
 where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>),(<*>),pure)
-import Data.Foldable (Foldable)
-import Data.Traversable (Traversable)
-#endif
+import Prelude hiding (reverse, splitAt)
 
-import Lens.Micro ((^.), (&), (.~), (%~), _2)
+import Control.Applicative ((<|>))
+import Data.Foldable (find, toList)
+import Control.Monad.Trans.State (evalState, get, put)
+
+import Lens.Micro ((^.), (^?), (&), (.~), (%~), _2, _head, set)
+import Data.Functor (($>))
+import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Maybe (fromMaybe)
-import Data.Monoid ((<>))
+#if !(MIN_VERSION_base(4,11,0))
+import Data.Semigroup (Semigroup, (<>))
+#endif
+import Data.Semigroup (sconcat)
+import qualified Data.Sequence as Seq
 import Graphics.Vty (Event(..), Key(..), Modifier(..))
 import qualified Data.Vector as V
+import GHC.Generics (Generic)
 
 import Brick.Types
 import Brick.Main (lookupViewport)
@@ -68,68 +100,154 @@ import Brick.Widgets.Core
 import Brick.Util (clamp)
 import Brick.AttrMap
 
--- | List state. Lists have an element type 'e' that is the data stored
--- by the list.  Lists handle the following events by default:
+-- | List state. Lists have a container @t@ of element type @e@ that is
+-- the data stored by the list. Internally, Lists handle the following
+-- events by default:
 --
 -- * Up/down arrow keys: move cursor of selected item
 -- * Page up / page down keys: move cursor of selected item by one page
 --   at a time (based on the number of items shown)
 -- * Home/end keys: move cursor of selected item to beginning or end of
 --   list
-data List n e =
-    List { listElements :: !(V.Vector e)
+--
+-- The 'List' type synonym fixes @t@ to 'V.Vector' for compatibility
+-- with previous versions of this library.
+--
+-- For a container type to be usable with 'GenericList', it must have
+-- instances of 'Traversable' and 'Splittable'. The following functions
+-- impose further constraints:
+--
+-- * 'listInsert': 'Applicative' and 'Semigroup'
+-- * 'listRemove': 'Semigroup'
+-- * 'listClear': 'Monoid'
+-- * 'listReverse': 'Reversible'
+--
+data GenericList n t e =
+    List { listElements :: !(t e)
+         -- ^ The list's sequence of elements.
          , listSelected :: !(Maybe Int)
+         -- ^ The list's selected element index, if any.
          , listName :: n
+         -- ^ The list's name.
          , listItemHeight :: Int
-         } deriving (Functor, Foldable, Traversable, Show)
+         -- ^ The height of an individual item in the list.
+         } deriving (Functor, Foldable, Traversable, Show, Generic)
 
-suffixLenses ''List
+suffixLenses ''GenericList
 
-instance Named (List n e) n where
+-- | An alias for 'GenericList' specialized to use a 'Vector' as its
+-- container type.
+type List n e = GenericList n V.Vector e
+
+instance Named (GenericList n t e) n where
     getName = listName
 
-handleListEvent :: (Ord n) => Event -> List n e -> EventM n (List n e)
+-- | Ordered container types that can be split at a given index. An
+-- instance of this class is required for a container type to be usable
+-- with 'GenericList'.
+class Splittable t where
+    {-# MINIMAL splitAt #-}
+
+    -- | Split at the given index. Equivalent to @(take n xs, drop n xs)@
+    -- and therefore total.
+    splitAt :: Int -> t a -> (t a, t a)
+
+    -- | Slice the structure. Equivalent to @(take n . drop i) xs@ and
+    -- therefore total.
+    --
+    -- The default implementation applies 'splitAt' two times: first to
+    -- drop elements leading up to the slice, and again to drop elements
+    -- after the slice.
+    slice :: Int {- ^ start index -} -> Int {- ^ length -} -> t a -> t a
+    slice i n = fst . splitAt n . snd . splitAt i
+
+-- | /O(1)/ 'splitAt'.
+instance Splittable V.Vector where
+    splitAt = V.splitAt
+
+-- | /O(log(min(i,n-i)))/ 'splitAt'.
+instance Splittable Seq.Seq where
+    splitAt = Seq.splitAt
+
+-- | Ordered container types where the order of elements can be
+-- reversed. Only required if you want to use 'listReverse'.
+class Reversible t where
+    {-# MINIMAL reverse #-}
+    reverse :: t a -> t a
+
+-- | /O(n)/ 'reverse'
+instance Reversible V.Vector where
+  reverse = V.reverse
+
+-- | /O(n)/ 'reverse'
+instance Reversible Seq.Seq where
+  reverse = Seq.reverse
+
+-- | Handle events for list cursor movement.  Events handled are:
+--
+-- * Up (up arrow key)
+-- * Down (down arrow key)
+-- * Page Up (PgUp)
+-- * Page Down (PgDown)
+-- * Go to first element (Home)
+-- * Go to last element (End)
+handleListEvent :: (Foldable t, Splittable t, Ord n)
+                => Event
+                -> GenericList n t e
+                -> EventM n (GenericList n t e)
 handleListEvent e theList =
     case e of
         EvKey KUp [] -> return $ listMoveUp theList
         EvKey KDown [] -> return $ listMoveDown theList
-        EvKey KHome [] -> return $ listMoveTo 0 theList
-        EvKey KEnd [] -> return $ listMoveTo (V.length $ listElements theList) theList
+        EvKey KHome [] -> return $ listMoveToBeginning theList
+        EvKey KEnd [] -> return $ listMoveToEnd theList
         EvKey KPageDown [] -> listMovePageDown theList
         EvKey KPageUp [] -> listMovePageUp theList
         _ -> return theList
 
--- | Enable list movement with the vi keys with a fallback if none
--- match. Use (handleListEventVi handleListEvent) in place of
--- handleListEvent to add the vi keys bindings to the standard ones.
+-- | Enable list movement with the vi keys with a fallback handler if
+-- none match. Use 'handleListEventVi' 'handleListEvent' in place of
+-- 'handleListEvent' to add the vi keys bindings to the standard ones.
 -- Movements handled include:
 --
--- * Up             (k)
--- * Down           (j)
--- * Page Up        (Ctrl-b)
--- * Page Down      (Ctrl-f)
--- * Half Page Up   (Ctrl-u)
+-- * Up (k)
+-- * Down (j)
+-- * Page Up (Ctrl-b)
+-- * Page Down (Ctrl-f)
+-- * Half Page Up (Ctrl-u)
 -- * Half Page Down (Ctrl-d)
--- * Top            (g)
--- * Bottom         (G)
-handleListEventVi :: (Ord n)
-                  => (Event -> List n e -> EventM n (List n e))
+-- * Go to first element (g)
+-- * Go to last element (G)
+handleListEventVi :: (Foldable t, Splittable t, Ord n)
+                  => (Event -> GenericList n t e -> EventM n (GenericList n t e))
                   -- ^ Fallback event handler to use if none of the vi keys
                   -- match.
                   -> Event
-                  -> List n e
-                  -> EventM n (List n e)
+                  -> GenericList n t e
+                  -> EventM n (GenericList n t e)
 handleListEventVi fallback e theList =
     case e of
         EvKey (KChar 'k') [] -> return $ listMoveUp theList
         EvKey (KChar 'j') [] -> return $ listMoveDown theList
-        EvKey (KChar 'g') [] -> return $ listMoveTo 0 theList
-        EvKey (KChar 'G') [] -> return $ listMoveTo (V.length $ listElements theList) theList
+        EvKey (KChar 'g') [] -> return $ listMoveToBeginning theList
+        EvKey (KChar 'G') [] -> return $ listMoveToEnd theList
         EvKey (KChar 'f') [MCtrl] -> listMovePageDown theList
         EvKey (KChar 'b') [MCtrl] -> listMovePageUp theList
-        EvKey (KChar 'd') [MCtrl] -> listMoveByPages 0.5 theList
-        EvKey (KChar 'u') [MCtrl] -> listMoveByPages (-0.5) theList
+        EvKey (KChar 'd') [MCtrl] -> listMoveByPages (0.5::Double) theList
+        EvKey (KChar 'u') [MCtrl] -> listMoveByPages (-0.5::Double) theList
         _ -> fallback e theList
+
+-- | Move the list selection to the first element in the list.
+listMoveToBeginning :: (Foldable t, Splittable t)
+                    => GenericList n t e
+                    -> GenericList n t e
+listMoveToBeginning = listMoveTo 0
+
+-- | Move the list selection to the last element in the list.
+listMoveToEnd :: (Foldable t, Splittable t)
+              => GenericList n t e
+              -> GenericList n t e
+listMoveToEnd l = listMoveTo (max 0 $ length (listElements l) - 1) l
 
 -- | The top-level attribute used for the entire list.
 listAttr :: AttrName
@@ -145,48 +263,96 @@ listSelectedAttr = listAttr <> "selected"
 listSelectedFocusedAttr :: AttrName
 listSelectedFocusedAttr = listSelectedAttr <> "focused"
 
--- | Construct a list in terms of an element type 'e'.
-list :: n
+-- | Construct a list in terms of container 't' with element type 'e'.
+list :: (Foldable t)
+     => n
      -- ^ The list name (must be unique)
-     -> V.Vector e
+     -> t e
      -- ^ The initial list contents
      -> Int
      -- ^ The list item height in rows (all list item widgets must be
-     -- this high)
-     -> List n e
+     -- this high).
+     -> GenericList n t e
 list name es h =
-    let selIndex = if V.null es then Nothing else Just 0
+    let selIndex = if null es then Nothing else Just 0
         safeHeight = max 1 h
     in List es selIndex name safeHeight
 
--- | Turn a list state value into a widget given an item drawing
--- function.
-renderList :: (Ord n, Show n)
+-- | Render a list using the specified item drawing function.
+--
+-- Evaluates the underlying container up to, and a bit beyond, the
+-- selected element. The exact amount depends on available height
+-- for drawing and 'listItemHeight'. At most, it will evaluate up to
+-- element @(i + h + 1)@ where @i@ is the selected index and @h@ is the
+-- available height.
+--
+-- Note that this function renders the list with the 'listAttr' as
+-- the default attribute and then uses 'listSelectedAttr' as the
+-- default attribute for the selected item if the list is not focused
+-- or 'listSelectedFocusedAttr' otherwise. This is provided as a
+-- convenience so that the item rendering function doesn't have to be
+-- concerned with attributes, but if those attributes are undesirable
+-- for your purposes, 'forceAttr' can always be used by the item
+-- rendering function to ensure that another attribute is used instead.
+renderList :: (Traversable t, Splittable t, Ord n, Show n)
            => (Bool -> e -> Widget n)
            -- ^ Rendering function, True for the selected element
            -> Bool
            -- ^ Whether the list has focus
-           -> List n e
+           -> GenericList n t e
            -- ^ The List to be rendered
            -> Widget n
            -- ^ rendered widget
-renderList drawElem foc l =
+renderList drawElem = renderListWithIndex $ const drawElem
+
+-- | Like 'renderList', except the render function is also provided with
+-- the index of each element.
+--
+-- Has the same evaluation characteristics as 'renderList'.
+renderListWithIndex :: (Traversable t, Splittable t, Ord n, Show n)
+                    => (Int -> Bool -> e -> Widget n)
+                    -- ^ Rendering function, taking index, and True for
+                    -- the selected element
+                    -> Bool
+                    -- ^ Whether the list has focus
+                    -> GenericList n t e
+                    -- ^ The List to be rendered
+                    -> Widget n
+                    -- ^ rendered widget
+renderListWithIndex drawElem foc l =
     withDefAttr listAttr $
     drawListElements foc l drawElem
 
-drawListElements :: (Ord n, Show n) => Bool -> List n e -> (Bool -> e -> Widget n) -> Widget n
+imap :: (Traversable t) => (Int -> a -> b) -> t a -> t b
+imap f xs =
+    let act = traverse (\a -> get >>= \i -> put (i + 1) $> f i a) xs
+    in evalState act 0
+
+-- | Draws the list elements.
+--
+-- Evaluates the underlying container up to, and a bit beyond, the
+-- selected element. The exact amount depends on available height
+-- for drawing and 'listItemHeight'. At most, it will evaluate up to
+-- element @(i + h + 1)@ where @i@ is the selected index and @h@ is the
+-- available height.
+drawListElements :: (Traversable t, Splittable t, Ord n, Show n)
+                 => Bool
+                 -> GenericList n t e
+                 -> (Int -> Bool -> e -> Widget n)
+                 -> Widget n
 drawListElements foc l drawElem =
     Widget Greedy Greedy $ do
         c <- getContext
 
-        let es = V.slice start num (l^.listElementsL)
+        -- Take (numPerHeight * 2) elements, or whatever is left
+        let es = slice start (numPerHeight * 2) (l^.listElementsL)
+
             idx = fromMaybe 0 (l^.listSelectedL)
 
             start = max 0 $ idx - numPerHeight + 1
-            num = min (numPerHeight * 2) (V.length (l^.listElementsL) - start)
 
-            -- The number of items to show is the available height divided by
-            -- the item height...
+            -- The number of items to show is the available height
+            -- divided by the item height...
             initialNumPerHeight = (c^.availHeightL) `div` (l^.listItemHeightL)
             -- ... but if the available height leaves a remainder of
             -- an item height then we need to ensure that we render an
@@ -203,9 +369,10 @@ drawListElements foc l drawElem =
 
             off = start * (l^.listItemHeightL)
 
-            drawnElements = flip V.imap es $ \i e ->
-                let isSelected = Just (i + start) == l^.listSelectedL
-                    elemWidget = drawElem isSelected e
+            drawnElements = flip imap es $ \i e ->
+                let j = i + start
+                    isSelected = Just j == l^.listSelectedL
+                    elemWidget = drawElem j isSelected e
                     selItemAttr = if foc
                                   then withDefAttr listSelectedFocusedAttr
                                   else withDefAttr listSelectedAttr
@@ -216,124 +383,275 @@ drawListElements foc l drawElem =
 
         render $ viewport (l^.listNameL) Vertical $
                  translateBy (Location (0, off)) $
-                 vBox $ V.toList drawnElements
+                 vBox $ toList drawnElements
 
 -- | Insert an item into a list at the specified position.
-listInsert :: Int
+--
+-- Complexity: the worse of 'splitAt' and `<>` for the container type.
+--
+-- @
+-- listInsert for 'List': O(n)
+-- listInsert for 'Seq.Seq': O(log(min(i, length n - i)))
+-- @
+listInsert :: (Splittable t, Applicative t, Semigroup (t e))
+           => Int
            -- ^ The position at which to insert (0 <= i <= size)
            -> e
            -- ^ The element to insert
-           -> List n e
-           -> List n e
+           -> GenericList n t e
+           -> GenericList n t e
 listInsert pos e l =
-    let safePos = clamp 0 (V.length es) pos
-        es = l^.listElementsL
+    let es = l^.listElementsL
         newSel = case l^.listSelectedL of
-          Nothing -> 0
-          Just s -> if safePos <= s
-                    then s + 1
-                    else s
-        (front, back) = V.splitAt safePos es
+            Nothing -> 0
+            Just s -> if pos <= s
+                      then s + 1
+                      else s
+        (front, back) = splitAt pos es
     in l & listSelectedL .~ Just newSel
-         & listElementsL .~ (front V.++ (e `V.cons` back))
+         & listElementsL .~ sconcat (front :| [pure e, back])
 
 -- | Remove an element from a list at the specified position.
-listRemove :: Int
-           -- ^ The position at which to remove an element (0 <= i < size)
-           -> List n e
-           -> List n e
-listRemove pos l | V.null (l^.listElementsL) = l
-                 | pos /= clamp 0 (V.length (l^.listElementsL) - 1) pos = l
+--
+-- Applies 'splitAt' two times: first to split the structure at the
+-- given position, and again to remove the first element from the tail.
+-- Consider the asymptotics of `splitAt` for the container type when
+-- using this function.
+--
+-- Complexity: the worse of 'splitAt' and `<>` for the container type.
+--
+-- @
+-- listRemove for 'List': O(n)
+-- listRemove for 'Seq.Seq': O(log(min(i, n - i)))
+-- @
+listRemove :: (Splittable t, Foldable t, Semigroup (t e))
+           => Int
+           -- ^ The position at which to remove an element (0 <= i <
+           -- size)
+           -> GenericList n t e
+           -> GenericList n t e
+listRemove pos l | null l = l
+                 | pos /= splitClamp l pos = l
                  | otherwise =
     let newSel = case l^.listSelectedL of
-          Nothing -> 0
-          Just s | pos == 0 -> 0
-                 | pos == s -> pos - 1
-                 | pos  < s -> s - 1
-                 | otherwise -> s
-        (front, back) = V.splitAt pos es
-        es' = front V.++ V.tail back
+            Nothing -> 0
+            Just s | pos == 0 -> 0
+                   | pos == s -> pos - 1
+                   | pos  < s -> s - 1
+                   | otherwise -> s
+        (front, rest) = splitAt pos es
+        (_, back) = splitAt 1 rest
+        es' = front <> back
         es = l^.listElementsL
-    in l & listSelectedL .~ (if V.null es' then Nothing else Just newSel)
+    in l & listSelectedL .~ (if null es' then Nothing else Just newSel)
          & listElementsL .~ es'
 
 -- | Replace the contents of a list with a new set of elements and
--- update the new selected index. If the list is empty, empty selection is used
--- instead. Otherwise, if the specified selected index (via 'Just') is not in
--- the list bounds, zero is used instead.
-listReplace :: V.Vector e -> Maybe Int -> List n e -> List n e
+-- update the new selected index. If the list is empty, empty selection
+-- is used instead. Otherwise, if the specified selected index (via
+-- 'Just') is not in the list bounds, zero is used instead.
+--
+-- Complexity: same as 'splitAt' for the container type.
+listReplace :: (Foldable t, Splittable t)
+            => t e
+            -> Maybe Int
+            -> GenericList n t e
+            -> GenericList n t e
 listReplace es idx l =
-    let newSel = if V.null es then Nothing else clamp 0 (V.length es - 1) <$> idx
-    in l & listSelectedL .~ newSel
-         & listElementsL .~ es
+    let l' = l & listElementsL .~ es
+        newSel = if null es then Nothing else inBoundsOrZero <$> idx
+        inBoundsOrZero i
+            | i == splitClamp l' i = i
+            | otherwise = 0
+    in l' & listSelectedL .~ newSel
 
 -- | Move the list selected index up by one. (Moves the cursor up,
 -- subtracts one from the index.)
-listMoveUp :: List n e -> List n e
+listMoveUp :: (Foldable t, Splittable t)
+           => GenericList n t e
+           -> GenericList n t e
 listMoveUp = listMoveBy (-1)
 
 -- | Move the list selected index up by one page.
-listMovePageUp :: (Ord n) => List n e -> EventM n (List n e)
-listMovePageUp theList = listMoveByPages (-1) theList
+listMovePageUp :: (Foldable t, Splittable t, Ord n)
+               => GenericList n t e
+               -> EventM n (GenericList n t e)
+listMovePageUp = listMoveByPages (-1::Double)
 
 -- | Move the list selected index down by one. (Moves the cursor down,
 -- adds one to the index.)
-listMoveDown :: List n e -> List n e
+listMoveDown :: (Foldable t, Splittable t)
+             => GenericList n t e
+             -> GenericList n t e
 listMoveDown = listMoveBy 1
 
 -- | Move the list selected index down by one page.
-listMovePageDown :: (Ord n) => List n e -> EventM n (List n e)
-listMovePageDown theList = listMoveByPages 1 theList
+listMovePageDown :: (Foldable t, Splittable t, Ord n)
+                 => GenericList n t e
+                 -> EventM n (GenericList n t e)
+listMovePageDown = listMoveByPages (1::Double)
 
 -- | Move the list selected index by some (fractional) number of pages.
-listMoveByPages :: (Ord n, RealFrac m) => m -> List n e -> EventM n (List n e)
+listMoveByPages :: (Foldable t, Splittable t, Ord n, RealFrac m)
+                => m
+                -> GenericList n t e
+                -> EventM n (GenericList n t e)
 listMoveByPages pages theList = do
     v <- lookupViewport (theList^.listNameL)
     case v of
         Nothing -> return theList
-        Just vp -> let
-            nElems = round $ pages * (fromIntegral $ vp^.vpSize._2) / (fromIntegral $ theList^.listItemHeightL)
-          in
+        Just vp -> do
+            let nElems = round $ pages * fromIntegral (vp^.vpSize._2) /
+                                 fromIntegral (theList^.listItemHeightL)
             return $ listMoveBy nElems theList
 
--- | Move the list selected index by the specified amount, subject to
--- validation.
-listMoveBy :: Int -> List n e -> List n e
+-- | Move the list selected index.
+--
+-- If the current selection is @Just x@, the selection is adjusted by
+-- the specified amount. The value is clamped to the extents of the list
+-- (i.e. the selection does not "wrap").
+--
+-- If the current selection is @Nothing@ (i.e. there is no selection)
+-- and the direction is positive, set to @Just 0@ (first element),
+-- otherwise set to @Just (length - 1)@ (last element).
+--
+-- Complexity: same as 'splitAt' for the container type.
+--
+-- @
+-- listMoveBy for 'List': O(1)
+-- listMoveBy for 'Seq.Seq': O(log(min(i,n-i)))
+-- @
+listMoveBy :: (Foldable t, Splittable t)
+           => Int
+           -> GenericList n t e
+           -> GenericList n t e
 listMoveBy amt l =
-    let newSel = clamp 0 (V.length (l^.listElementsL) - 1) <$> (amt +) <$> (l^.listSelectedL)
-    in l & listSelectedL .~ newSel
+    let target = case l ^. listSelectedL of
+            Nothing
+                | amt > 0 -> 0
+                | otherwise -> length l - 1
+            Just i -> max 0 (amt + i)  -- don't be negative
+    in listMoveTo target l
 
 -- | Set the selected index for a list to the specified index, subject
 -- to validation.
-listMoveTo :: Int -> List n e -> List n e
+--
+-- If @pos >= 0@, indexes from the start of the list (which gets
+-- evaluated up to the target index)
+--
+-- If @pos < 0@, indexes from the end of the list (which evaluates
+-- 'length' of the list).
+--
+-- Complexity: same as 'splitAt' for the container type.
+--
+-- @
+-- listMoveTo for 'List': O(1)
+-- listMoveTo for 'Seq.Seq': O(log(min(i,n-i)))
+-- @
+listMoveTo :: (Foldable t, Splittable t)
+           => Int
+           -> GenericList n t e
+           -> GenericList n t e
 listMoveTo pos l =
-    let len = V.length (l^.listElementsL)
-        newSel = clamp 0 (len - 1) $ if pos < 0 then len - pos else pos
-    in l & listSelectedL .~ if len > 0
-                            then Just newSel
-                            else Nothing
+    let len = length l
+        i = if pos < 0 then len - pos else pos
+        newSel = splitClamp l i
+    in l & listSelectedL .~ if null l then Nothing else Just newSel
+
+-- | Split-based clamp that avoids evaluating 'length' of the structure
+-- (unless the structure is already fully evaluated).
+splitClamp :: (Foldable t, Splittable t) => GenericList n t e -> Int -> Int
+splitClamp l i =
+    let (_, t) = splitAt i (l ^. listElementsL)  -- split at i
+    in
+        -- If the tail is empty, then the requested index is not in the
+        -- list. And because we have already seen the end of the list,
+        -- using 'length' will not force unwanted computation.
+        --
+        -- Otherwise if tail is not empty, then we already know that i
+        -- is in the list, so we don't need to know the length
+        clamp 0 (if null t then length l - 1 else i) i
+
+-- | Set the selected index for a list to the index of the first
+-- occurrence of the specified element if it is in the list, or leave
+-- the list unmodified otherwise.
+--
+-- /O(n)/.  Only evaluates as much of the container as needed.
+listMoveToElement :: (Eq e, Foldable t, Splittable t)
+                  => e
+                  -> GenericList n t e
+                  -> GenericList n t e
+listMoveToElement e = listFindBy (== e) . set listSelectedL Nothing
+
+-- | Starting from the currently-selected position, attempt to find
+-- and select the next element matching the predicate. If there are no
+-- matches for the remainder of the list or if the list has no selection
+-- at all, the search starts at the beginning. If no matching element is
+-- found anywhere in the list, leave the list unmodified.
+--
+-- /O(n)/.  Only evaluates as much of the container as needed.
+listFindBy :: (Foldable t, Splittable t)
+           => (e -> Bool)
+           -> GenericList n t e
+           -> GenericList n t e
+listFindBy test l =
+    let start = maybe 0 (+1) (l ^. listSelectedL)
+        (h, t) = splitAt start (l ^. listElementsL)
+        tailResult = find (test . snd) . zip [start..] . toList $ t
+        headResult = find (test . snd) . zip [0..] . toList $ h
+        result = tailResult <|> headResult
+    in maybe id (set listSelectedL . Just . fst) result l
 
 -- | Return a list's selected element, if any.
-listSelectedElement :: List n e -> Maybe (Int, e)
+--
+-- Only evaluates as much of the container as needed.
+--
+-- Complexity: same as 'splitAt' for the container type.
+--
+-- @
+-- listSelectedElement for 'List': O(1)
+-- listSelectedElement for 'Seq.Seq': O(log(min(i, n - i)))
+-- @
+listSelectedElement :: (Splittable t, Foldable t)
+                    => GenericList n t e
+                    -> Maybe (Int, e)
 listSelectedElement l = do
-  sel <- l^.listSelectedL
-  return (sel, (l^.listElementsL) V.! sel)
+    sel <- l^.listSelectedL
+    let (_, xs) = splitAt sel (l ^. listElementsL)
+    (sel,) <$> toList xs ^? _head
 
 -- | Remove all elements from the list and clear the selection.
-listClear :: List n e -> List n e
-listClear l = l & listElementsL .~ V.empty & listSelectedL .~ Nothing
+--
+-- /O(1)/
+listClear :: (Monoid (t e)) => GenericList n t e -> GenericList n t e
+listClear l = l & listElementsL .~ mempty & listSelectedL .~ Nothing
 
--- | Reverse the list.  The element selected before the reversal will
+-- | Reverse the list. The element selected before the reversal will
 -- again be the selected one.
-listReverse :: List n e -> List n e
-listReverse theList = theList & listElementsL %~ V.reverse & listSelectedL .~ newSel
-  where n = V.length (listElements theList)
-        newSel = (-) <$> pure (n-1) <*> listSelected theList
+--
+-- Complexity: same as 'reverse' for the container type.
+--
+-- @
+-- listReverse for 'List': O(n)
+-- listReverse for 'Seq.Seq': O(n)
+-- @
+listReverse :: (Reversible t, Foldable t)
+            => GenericList n t e
+            -> GenericList n t e
+listReverse l =
+    l & listElementsL %~ reverse
+      & listSelectedL %~ fmap (length l - 1 -)
 
 -- | Apply a function to the selected element. If no element is selected
 -- the list is not modified.
-listModify :: (e -> e) -> List n e -> List n e
-listModify f l = case listSelectedElement l of
-  Nothing -> l
-  Just (n,e) -> let es = V.update (l^.listElementsL) (return (n, f e))
-                in listReplace es (Just n) l
+--
+-- Complexity: same as 'traverse' for the container type (typically
+-- /O(n)/).
+listModify :: (Traversable t)
+           => (e -> e)
+           -> GenericList n t e
+           -> GenericList n t e
+listModify f l =
+    case l ^. listSelectedL of
+        Nothing -> l
+        Just j -> l & listElementsL %~ imap (\i e -> if i == j then f e else e)

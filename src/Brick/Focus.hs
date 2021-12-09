@@ -1,13 +1,14 @@
 -- | This module provides a type and functions for handling focus rings
 -- of values.
---
--- This interface is experimental.
 module Brick.Focus
   ( FocusRing
   , focusRing
   , focusNext
   , focusPrev
   , focusGetCurrent
+  , focusSetCurrent
+  , focusRingLength
+  , focusRingToList
   , focusRingCursor
   , withFocusRing
   , focusRingModify
@@ -57,7 +58,7 @@ withFocusRing :: (Eq n, Named a n)
               -> (Bool -> a -> b)
               -- ^ A function that takes a value and its focus state.
               -> a
-              -- ^ The wiget state value that we need to check for focus.
+              -- ^ The widget state value that we need to check for focus.
               -> b
               -- ^ The rest of the computation.
 withFocusRing ring f a = f (focusGetCurrent ring == Just (getName a)) a
@@ -66,6 +67,26 @@ withFocusRing ring f a = f (focusGetCurrent ring == Just (getName a)) a
 -- is emtpy, return 'Nothing'.
 focusGetCurrent :: FocusRing n -> Maybe n
 focusGetCurrent (FocusRing l) = C.focus l
+
+-- | Set the currently-focused resource name in the ring, provided the
+-- name is in the ring. Otherwise return the ring unmodified.
+focusSetCurrent :: (Eq n) => n -> FocusRing n -> FocusRing n
+focusSetCurrent n r@(FocusRing l) =
+    case C.rotateTo n l of
+        Nothing -> r
+        Just l' -> FocusRing l'
+
+-- | Get the size of the FocusRing.
+focusRingLength :: FocusRing n -> Int
+focusRingLength (FocusRing l) = C.size l
+
+-- | Return all of the entries in the focus ring, starting with the
+-- currently-focused entry and wrapping around the ring.
+--
+-- For example, if a ring contains A, B, C, and D, and the current entry
+-- is B, the result will be [B, C, D, A].
+focusRingToList :: FocusRing n -> [n]
+focusRingToList (FocusRing l) = C.rightElements l
 
 -- | Modify the internal circular list structure of a focus ring
 -- directly. This function permits modification of the circular list

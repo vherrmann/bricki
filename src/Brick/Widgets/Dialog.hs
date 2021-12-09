@@ -1,7 +1,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
 -- | This module provides a simple dialog widget. You get to pick the
 -- dialog title, if any, as well as its body and buttons.
+--
+-- Note that this dialog is really for simple use cases where you want
+-- to get the user's answer to a question, such as "Would you like
+-- to save changes before quitting?" If you require something more
+-- sophisticated, you'll need to build it yourself. You might also
+-- consider seeing the 'Brick.Forms' module for help with input
+-- management, and see the implementation of this module to see how to
+-- reproduce a dialog-style UI.
 module Brick.Widgets.Dialog
   ( Dialog
   , dialogTitle
@@ -27,12 +36,10 @@ module Brick.Widgets.Dialog
   )
 where
 
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif
-
 import Lens.Micro
+#if !(MIN_VERSION_base(4,11,0))
 import Data.Monoid
+#endif
 import Data.List (intersperse)
 import Graphics.Vty.Input (Event(..), Key(..))
 
@@ -68,10 +75,10 @@ suffixLenses ''Dialog
 handleDialogEvent :: Event -> Dialog a -> EventM n (Dialog a)
 handleDialogEvent ev d =
     return $ case ev of
-        EvKey (KChar '\t') [] -> nextButtonBy 1 d
-        EvKey KBackTab [] -> nextButtonBy (-1) d
-        EvKey KRight [] -> nextButtonBy 1 d
-        EvKey KLeft [] -> nextButtonBy (-1) d
+        EvKey (KChar '\t') [] -> nextButtonBy 1 True d
+        EvKey KBackTab [] -> nextButtonBy (-1) True d
+        EvKey KRight [] -> nextButtonBy 1 False d
+        EvKey KLeft [] -> nextButtonBy (-1) False d
         _ -> d
 
 -- | Create a dialog.
@@ -125,13 +132,18 @@ renderDialog d body =
             , hCenter buttons
             ]
 
-nextButtonBy :: Int -> Dialog a -> Dialog a
-nextButtonBy amt d =
+nextButtonBy :: Int -> Bool -> Dialog a -> Dialog a
+nextButtonBy amt wrapCycle d =
     let numButtons = length $ d^.dialogButtonsL
     in if numButtons == 0 then d
        else case d^.dialogSelectedIndexL of
            Nothing -> d & dialogSelectedIndexL .~ (Just 0)
-           Just i -> d & dialogSelectedIndexL .~ (Just $ (i + amt) `mod` numButtons)
+           Just i -> d & dialogSelectedIndexL .~ (Just newIndex)
+               where
+                   addedIndex = i + amt
+                   newIndex = if wrapCycle
+                              then addedIndex `mod` numButtons
+                              else max 0 $ min addedIndex $ numButtons - 1
 
 -- | Obtain the value associated with the dialog's currently-selected
 -- button, if any. This function is probably what you want when someone

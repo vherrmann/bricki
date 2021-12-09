@@ -1,12 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 module Main where
 
 import Lens.Micro ((^.), (&), (.~), (%~))
 import Lens.Micro.TH (makeLenses)
 import Control.Monad (void, forever)
 import Control.Concurrent (threadDelay, forkIO)
+#if !(MIN_VERSION_base(4,11,0))
 import Data.Monoid
+#endif
 import qualified Graphics.Vty as V
 
 import Brick.BChan
@@ -75,8 +78,10 @@ main :: IO ()
 main = do
     chan <- newBChan 10
 
-    forkIO $ forever $ do
+    void $ forkIO $ forever $ do
         writeBChan chan Counter
         threadDelay 1000000
 
-    void $ customMain (V.mkVty V.defaultConfig) (Just chan) theApp initialState
+    let buildVty = V.mkVty V.defaultConfig
+    initialVty <- buildVty
+    void $ customMain initialVty buildVty (Just chan) theApp initialState

@@ -1,26 +1,18 @@
-brick
------
+![](logo/brick-final-clearbg-with-text.svg)
 
-[![Build Status](https://travis-ci.org/jtdaugherty/brick.svg?branch=master)](https://travis-ci.org/jtdaugherty/brick)
-
-`brick` is a Haskell terminal user interface programming library in the
-style of [gloss](http://hackage.haskell.org/package/gloss). This means
-you write a function that describes how your user interface should look,
-but the library takes care of a lot of the book-keeping that so commonly
-goes into writing such programs.
+`brick` is a Haskell terminal user interface (TUI) programming toolkit.
+To use it, you write a pure function that describes how your user
+interface should be drawn based on your current application state and
+you provide a state transformation function to handle events.
 
 `brick` exposes a declarative API. Unlike most GUI toolkits which
 require you to write a long and tedious sequence of "create a widget,
 now bind an event handler", `brick` just requires you to describe your
-interface using a set of declarative combinators. Then you provide a
-function to transform your application state when input or other kinds
-of events arrive.
+interface using a set of declarative layout combinators.
 
 Under the hood, this library builds upon
 [vty](http://hackage.haskell.org/package/vty), so some knowledge of Vty
 will be helpful in using this library.
-
-This library deprecates [vty-ui](https://github.com/jtdaugherty/vty-ui).
 
 Example
 -------
@@ -48,29 +40,70 @@ Result:
 Featured Projects
 -----------------
 
-To get an idea of what some people have done with `brick`, take a look
-at these projects:
+To get an idea of what some people have done with `brick`, check out
+these projects. If you have made something and would like me to include
+it, get in touch!
 
- * `tetris`: https://github.com/SamTay/tetris
- * `gotta-go-fast`, a typing tutor: https://github.com/hot-leaf-juice/gotta-go-fast
- * `haskell-player`, an `afplay` frontend: https://github.com/potomak/haskell-player
- * `mushu`, an `MPD` client: https://github.com/elaye/mushu
- * `matterhorn`, a client for [Mattermost](https://about.mattermost.com/): https://github.com/matterhorn-chat/matterhorn
- * `viewprof`, a GHC profile viewer: https://github.com/maoe/viewprof
- * `tart`, a mouse-driven ASCII art drawing program: https://github.com/jtdaugherty/tart
- * `silly-joy`, an interpreter for Joy in Haskell: https://github.com/rootmos/silly-joy
- * `herms`, a command-line tool for managing kitchen recipes: https://github.com/jackkiefer/herms
- * `purebred`, a mail user agent: https://github.com/purebred-mua/purebred
+| Project | Description |
+| ------- | ----------- |
+| [`tetris`](https://github.com/SamTay/tetris) | An implementation of the Tetris game |
+| [`gotta-go-fast`](https://github.com/callum-oakley/gotta-go-fast) | A typing tutor |
+| [`haskell-player`](https://github.com/potomak/haskell-player) | An `afplay` frontend |
+| [`mushu`](https://github.com/elaye/mushu) | An `MPD` client |
+| [`matterhorn`](https://github.com/matterhorn-chat/matterhorn) | A client for [Mattermost](https://about.mattermost.com/) |
+| [`viewprof`](https://github.com/maoe/viewprof) | A GHC profile viewer |
+| [`tart`](https://github.com/jtdaugherty/tart) | A mouse-driven ASCII art drawing program |
+| [`silly-joy`](https://github.com/rootmos/silly-joy) | An interpreter for Joy |
+| [`herms`](https://github.com/jackkiefer/herms) | A command-line tool for managing kitchen recipes |
+| [`purebred`](https://github.com/purebred-mua/purebred) | A mail user agent |
+| [`2048Haskell`](https://github.com/8Gitbrix/2048Haskell) | An implementation of the 2048 game |
+| [`bhoogle`](https://github.com/andrevdm/bhoogle) | A [Hoogle](https://www.haskell.org/hoogle/) client |
+| [`clifm`](https://github.com/pasqu4le/clifm) | A file manager |
+| [`towerHanoi`](https://github.com/shajenM/projects/tree/master/towerHanoi) | Animated solutions to The Tower of Hanoi |
+| [`VOIDSPACE`](https://github.com/ChrisPenner/void-space) | A space-themed typing-tutor game |
+| [`solitaire`](https://github.com/ambuc/solitaire) | The card game |
+| [`sudoku-tui`](https://github.com/evanrelf/sudoku-tui) | A Sudoku implementation |
+| [`summoner-tui`](https://github.com/kowainik/summoner/tree/master/summoner-tui) | An interactive frontend to the Summoner tool |
+| [`wrapping-editor`](https://github.com/ta0kira/wrapping-editor) | An embeddable editor with support for Brick |
+| [`git-brunch`](https://github.com/andys8/git-brunch) | A git branch checkout utility |
+| [`hascard`](https://github.com/Yvee1/hascard) | A program for reviewing "flash card" notes |
+| [`ttyme`](https://github.com/evuez/ttyme) | A TUI for [Harvest](https://www.getharvest.com/) |
+| [`ghcup`](https://www.haskell.org/ghcup/) | A TUI for `ghcup`, the Haskell toolchain manager |
+| [`cbookview`](https://github.com/mlang/chessIO) | A TUI for exploring polyglot chess opening book files |
+| [`thock`](https://github.com/rmehri01/thock) | A modern TUI typing game featuring online racing against friends |
+| [`fifteen`](https://github.com/benjaminselfridge/fifteen) | An implementation of the [15 puzzle](https://en.wikipedia.org/wiki/15_puzzle) |
+| [`maze`](https://github.com/benjaminselfridge/maze) | A Brick-based maze game |
+| [`pboy`](https://github.com/2mol/pboy) | A tiny PDF organizer |
+| [`hyahtzee2`](https://github.com/DamienCassou/hyahtzee2#readme) | Famous Yahtzee dice game |
+| [`brewsage`](https://github.com/gerdreiss/brewsage#readme) | A TUI for Homebrew |
+| [`sandwich`](https://codedownio.github.io/sandwich/) | A test framework with a TUI interface |
+| [`youbrick`](https://github.com/florentc/youbrick) | A feed aggregator and launcher for Youtube channels |
+| [`swarm`](https://github.com/byorgey/swarm/) | A 2D programming and resource gathering game |
+| [`hledger-ui`](https://github.com/simonmichael/hledger) | A terminal UI for the hledger accounting system. |
+| [`hledger-iadd`](http://github.com/rootzlevel/hledger-iadd) | An interactive terminal UI for adding hledger journal entries |
+
+These third-party packages also extend `brick`:
+
+| Project | Description |
+| ------- | ----------- |
+| [`brick-filetree`](https://github.com/ChrisPenner/brick-filetree) [[Hackage]](http://hackage.haskell.org/package/brick-filetree) | A widget for exploring a directory tree and selecting or flagging files and directories |
+
+Release Announcements / News
+----------------------------
+
+Find out about `brick` releases and other news on Twitter:
+
+https://twitter.com/brick_haskell/
 
 Getting Started
 ---------------
 
-TLDR:
+Check out the many demo programs to get a feel for different aspects of
+the library:
 
 ```
-$ cabal sandbox init
-$ cabal install -j -f demos
-$ .cabal-sandbox/bin/brick-???-demo
+$ cabal new-build -f demos
+$ find dist-newstyle -type f -name \*-demo
 ```
 
 To get started, see the [user guide](https://github.com/jtdaugherty/brick/blob/master/docs/guide.rst).
@@ -80,34 +113,30 @@ Documentation
 
 Documentation for `brick` comes in a variety of forms:
 
-* [The brick user guide](https://github.com/jtdaugherty/brick/blob/master/docs/guide.rst)
+* [The official brick user guide](https://github.com/jtdaugherty/brick/blob/master/docs/guide.rst)
 * [Samuel Tay's brick tutorial](https://github.com/jtdaugherty/brick/blob/master/docs/samtay-tutorial.md)
 * Haddock (all modules)
-* [Demo programs](https://github.com/jtdaugherty/brick/blob/master/programs)
+* [Demo programs](https://github.com/jtdaugherty/brick/blob/master/programs) ([Screenshots](https://github.com/jtdaugherty/brick/blob/master/docs/programs-screenshots.md))
 * [FAQ](https://github.com/jtdaugherty/brick/blob/master/FAQ.md)
 
 Feature Overview
 ----------------
 
-`brick` comes with a bunch of widget types to get you started:
+`brick` comes with a bunch of batteries included:
 
  * Vertical and horizontal box layout widgets
  * Basic single- and multi-line text editor widgets
- * List widget
+ * List and table widgets
  * Progress bar widget
  * Simple dialog box widget
  * Border-drawing widgets (put borders around or in between things)
- * Generic scrollable viewports
+ * Generic scrollable viewports and viewport scroll bars
+ * General-purpose layout control combinators
  * Extensible widget-building API
- * (And many more general-purpose layout control combinators)
-
-In addition, some of `brick`'s more powerful features may not be obvious
-right away:
-
- * All widgets can be arranged in predictable layouts so you don't have
-   to worry about terminal resizes.
- * Attribute management is flexible and can be customized at runtime on
-   a per-widget basis.
+ * User-customizable attribute themes
+ * Type-safe, validated input form API (see the `Brick.Forms` module)
+ * A filesystem browser for file and directory selection
+ * Borders can be configured to automatically connect!
 
 Brick-Users Discussion
 ----------------------
@@ -121,14 +150,15 @@ Status
 ------
 
 There are some places were I have deliberately chosen to worry about
-performance later for the sake of spending more time on the design (and
-to wait on performance issues to arise first). `brick` is also something
-of an experimental project of mine and some aspects of the design
-involve trade-offs that may are not entirely settled. In addition you
-can expect this library to follow a principle of fearless improvement:
-new versions will make (sometimes substantial) API changes if those
-changes really do make the library better. I will place more importance
-on getting the API right than on maintaining backwards compatibility.
+performance later for the sake of spending more time on the design
+(and to wait on performance issues to arise first). `brick` is also
+something of an experimental project of mine and some aspects of the
+design involve trade-offs that might not be right for your application.
+Brick is not intended to be all things to all people; rather, I want it
+to provide a good foundation for building complex terminal interfaces
+in a declarative style to take away specific headaches of building,
+modifying, and working with such interfaces, all while seeing how far we
+can get with a pure function to specify the interface.
 
 `brick` exports an extension API that makes it possible to make your own
 packages and widgets. If you use that, you'll also be helping to test
@@ -161,3 +191,8 @@ should consider to make submitting patches easier for all concerned:
    codebase.
  - Please adjust or provide Haddock and/or user guide documentation
    relevant to any changes you make.
+ - New commits should be `-Wall` clean.
+ - Please do NOT include package version changes in your patches.
+   Package version changes are only done at release time when the full
+   scope of a release's changes can be evaluated to determine the
+   appropriate version change.
